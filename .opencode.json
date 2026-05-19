@@ -1,0 +1,21 @@
+{
+  "mcp": {
+    "tradingagents": {
+      "type": "local",
+      "command": [
+        "tradingagents-mcp"
+      ],
+      "timeout": 0,
+      "environment": {
+        "MCP_LLM_PROVIDER": "dashscope",
+        "MCP_DEEP_THINK_LLM": "qwen-max",
+        "MCP_QUICK_THINK_LLM": "qwen-turbo",
+        "MCP_BACKEND_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "MCP_ONLINE_TOOLS": "true",
+        "MCP_ONLINE_NEWS": "true",
+        "DASHSCOPE_API_KEY": "",
+        "OPENAI_API_KEY": ""
+      }
+    }
+  }
+}

@@ -1,0 +1,2 @@
+[console_scripts]
+tradingagents-mcp = tradingagents_mcp.__main__:main

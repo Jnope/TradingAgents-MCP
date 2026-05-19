@@ -1,0 +1,2 @@
+tradingagents
+tradingagents_mcp
