@@ -53,122 +53,10 @@ except (ImportError, AttributeError) as e:
 # ==================== 数据源配置读取 ====================
 
 def _get_enabled_hk_data_sources() -> list:
-    """
-    从数据库读取用户启用的港股数据源配置
-
-    Returns:
-        list: 按优先级排序的数据源列表，如 ['akshare', 'yfinance']
-    """
-    try:
-        # 尝试从数据库读取配置
-        from app.core.database import get_mongo_db_sync
-        db = get_mongo_db_sync()
-
-        # 获取最新的激活配置
-        config_data = db.system_configs.find_one(
-            {"is_active": True},
-            sort=[("version", -1)]
-        )
-
-        if config_data and config_data.get('data_source_configs'):
-            data_source_configs = config_data.get('data_source_configs', [])
-
-            # 过滤出启用的港股数据源
-            enabled_sources = []
-            for ds in data_source_configs:
-                if not ds.get('enabled', True):
-                    continue
-
-                # 检查是否支持港股市场（支持中英文标识）
-                market_categories = ds.get('market_categories', [])
-                if market_categories:
-                    # 支持 '港股' 或 'hk_stocks'
-                    if '港股' not in market_categories and 'hk_stocks' not in market_categories:
-                        continue
-
-                # 映射数据源类型
-                ds_type = ds.get('type', '').lower()
-                if ds_type in ['akshare', 'yfinance', 'finnhub']:
-                    enabled_sources.append({
-                        'type': ds_type,
-                        'priority': ds.get('priority', 0)
-                    })
-
-            # 按优先级排序（数字越大优先级越高）
-            enabled_sources.sort(key=lambda x: x['priority'], reverse=True)
-
-            result = [s['type'] for s in enabled_sources]
-            if result:
-                logger.info(f"✅ [港股数据源] 从数据库读取: {result}")
-                return result
-            else:
-                logger.warning(f"⚠️ [港股数据源] 数据库中没有启用的港股数据源，使用默认顺序")
-        else:
-            logger.warning("⚠️ [港股数据源] 数据库中没有配置，使用默认顺序")
-    except Exception as e:
-        logger.warning(f"⚠️ [港股数据源] 从数据库读取失败: {e}，使用默认顺序")
-
-    # 回退到默认顺序
     return ['akshare', 'yfinance']
 
 
 def _get_enabled_us_data_sources() -> list:
-    """
-    从数据库读取用户启用的美股数据源配置
-
-    Returns:
-        list: 按优先级排序的数据源列表，如 ['yfinance', 'finnhub']
-    """
-    try:
-        # 尝试从数据库读取配置
-        from app.core.database import get_mongo_db_sync
-        db = get_mongo_db_sync()
-
-        # 获取最新的激活配置
-        config_data = db.system_configs.find_one(
-            {"is_active": True},
-            sort=[("version", -1)]
-        )
-
-        if config_data and config_data.get('data_source_configs'):
-            data_source_configs = config_data.get('data_source_configs', [])
-
-            # 过滤出启用的美股数据源
-            enabled_sources = []
-            for ds in data_source_configs:
-                if not ds.get('enabled', True):
-                    continue
-
-                # 检查是否支持美股市场（支持中英文标识）
-                market_categories = ds.get('market_categories', [])
-                if market_categories:
-                    # 支持 '美股' 或 'us_stocks'
-                    if '美股' not in market_categories and 'us_stocks' not in market_categories:
-                        continue
-
-                # 映射数据源类型
-                ds_type = ds.get('type', '').lower()
-                if ds_type in ['yfinance', 'finnhub']:
-                    enabled_sources.append({
-                        'type': ds_type,
-                        'priority': ds.get('priority', 0)
-                    })
-
-            # 按优先级排序（数字越大优先级越高）
-            enabled_sources.sort(key=lambda x: x['priority'], reverse=True)
-
-            result = [s['type'] for s in enabled_sources]
-            if result:
-                logger.info(f"✅ [美股数据源] 从数据库读取: {result}")
-                return result
-            else:
-                logger.warning(f"⚠️ [美股数据源] 数据库中没有启用的美股数据源，使用默认顺序")
-        else:
-            logger.warning("⚠️ [美股数据源] 数据库中没有配置，使用默认顺序")
-    except Exception as e:
-        logger.warning(f"⚠️ [美股数据源] 从数据库读取失败: {e}，使用默认顺序")
-
-    # 回退到默认顺序
     return ['yfinance', 'finnhub']
 
 # 尝试导入yfinance相关模块，如果失败则跳过
@@ -1179,9 +1067,6 @@ def get_fundamentals_openai(ticker, curr_date):
         }
 
         for source in us_manager.available_sources:
-            if source == USDataSource.MONGODB:
-                continue  # MongoDB 缓存单独处理
-
             cache_name = data_source_cache_names.get(source)
             if cache_name:
                 cached_key = cache.find_cached_fundamentals_data(ticker, data_source=cache_name)
@@ -1486,7 +1371,7 @@ def get_china_stock_fundamentals_tushare(
 ) -> str:
     """
     获取中国A股基本面数据（统一接口）
-    支持多数据源：MongoDB → Tushare → AKShare → 生成分析
+    支持多数据源：Tushare → AKShare → 生成分析
 
     Args:
         ticker: 股票代码
@@ -1538,20 +1423,8 @@ def get_china_stock_data_unified(
     original_start_date = start_date
     original_end_date = end_date
 
-    # 从配置获取市场分析回溯天数（默认30天）
-    try:
-        settings = get_settings()
-        lookback_days = settings.MARKET_ANALYST_LOOKBACK_DAYS
-        logger.info(f"📅 [配置验证] ===== MARKET_ANALYST_LOOKBACK_DAYS 配置检查 =====")
-        logger.info(f"📅 [配置验证] 从配置文件读取: {lookback_days}天")
-        logger.info(f"📅 [配置验证] 配置来源: app.core.config.Settings")
-        logger.info(f"📅 [配置验证] 环境变量: MARKET_ANALYST_LOOKBACK_DAYS={lookback_days}")
-    except Exception as e:
-        lookback_days = 30  # 默认30天
-        logger.warning(f"⚠️ [配置验证] 无法获取配置，使用默认值: {lookback_days}天")
-        logger.warning(f"⚠️ [配置验证] 错误详情: {e}")
+    lookback_days = int(os.environ.get("MARKET_ANALYST_LOOKBACK_DAYS", "30"))
 
-    # 使用 end_date 作为目标日期，向前回溯指定天数
     start_date, end_date = get_trading_date_range(end_date, lookback_days=lookback_days)
 
     logger.info(f"📅 [智能日期] ===== 日期范围计算结果 =====")
@@ -1573,8 +1446,6 @@ def get_china_stock_data_unified(
 
     # 添加详细的股票代码追踪日志
     logger.info(f"🔍 [股票代码追踪] get_china_stock_data_unified 接收到的原始股票代码: '{ticker}' (类型: {type(ticker)})")
-    logger.info(f"🔍 [股票代码追踪] 股票代码长度: {len(str(ticker))}")
-    logger.info(f"🔍 [股票代码追踪] 股票代码字符: {list(str(ticker))}")
 
     start_time = time.time()
 
@@ -1683,7 +1554,7 @@ def get_china_stock_info_unified(
 
 
 def switch_china_data_source(
-    source: Annotated[str, "数据源名称：tushare, akshare, baostock"]
+    source: Annotated[str, "数据源名称：internal, tushare, akshare, baostock"]
 ) -> str:
     """
     切换中国股票数据源
@@ -1699,6 +1570,7 @@ def switch_china_data_source(
 
         # 映射字符串到枚举（TDX 已移除）
         source_mapping = {
+            'internal': ChinaDataSource.INTERNAL,
             'tushare': ChinaDataSource.TUSHARE,
             'akshare': ChinaDataSource.AKSHARE,
             'baostock': ChinaDataSource.BAOSTOCK,
@@ -1765,22 +1637,12 @@ def get_hk_stock_data_unified(symbol: str, start_date: str = None, end_date: str
 
         # 🔧 智能日期范围处理：自动扩展到配置的回溯天数，处理周末/节假日
         from tradingagents.utils.dataflow_utils import get_trading_date_range
-        from app.core.config import get_settings
 
         original_start_date = start_date
         original_end_date = end_date
 
-        # 从配置获取市场分析回溯天数（默认60天）
-        try:
-            settings = get_settings()
-            lookback_days = settings.MARKET_ANALYST_LOOKBACK_DAYS
-            logger.info(f"📅 [港股配置验证] MARKET_ANALYST_LOOKBACK_DAYS: {lookback_days}天")
-        except Exception as e:
-            lookback_days = 60  # 默认60天
-            logger.warning(f"⚠️ [港股配置验证] 无法获取配置，使用默认值: {lookback_days}天")
-            logger.warning(f"⚠️ [港股配置验证] 错误详情: {e}")
+        lookback_days = int(os.environ.get("MARKET_ANALYST_LOOKBACK_DAYS", "60"))
 
-        # 使用 end_date 作为目标日期，向前回溯指定天数
         start_date, end_date = get_trading_date_range(end_date, lookback_days=lookback_days)
 
         logger.info(f"📅 [港股智能日期] 原始输入: {original_start_date} 至 {original_end_date}")

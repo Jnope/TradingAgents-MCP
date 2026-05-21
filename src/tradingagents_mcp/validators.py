@@ -146,32 +146,24 @@ def resolve_date_range(description: str) -> Tuple[str, str]:
 
 
 def nearest_trade_date(date_str: str) -> str:
+    from tradingagents_mcp.trade_calendar import get_trade_dates, _llm_judge_trade_date
+
     try:
         dt = pd.Timestamp(date_str)
     except Exception:
         return date_str
 
-    if dt.weekday() >= 5:
-        dt = dt - pd.Timedelta(days=dt.weekday() - 4)
+    trade_dates = get_trade_dates()
 
-    cn_holidays_2024_2026 = {
-        "2024-01-01", "2024-02-10", "2024-02-11", "2024-02-12",
-        "2024-02-13", "2024-02-14", "2024-02-15", "2024-02-16",
-        "2024-02-17", "2024-04-04", "2024-04-05", "2024-04-06",
-        "2024-05-01", "2024-05-02", "2024-05-03", "2024-05-04",
-        "2024-05-05", "2024-06-08", "2024-06-09", "2024-06-10",
-        "2024-09-15", "2024-09-16", "2024-09-17",
-        "2024-10-01", "2024-10-02", "2024-10-03", "2024-10-04",
-        "2024-10-05", "2024-10-06", "2024-10-07",
-    }
+    if trade_dates:
+        for _ in range(30):
+            ds = dt.strftime("%Y-%m-%d")
+            if ds in trade_dates:
+                return ds
+            dt = dt - pd.Timedelta(days=1)
+        return date_str
 
-    for _ in range(10):
-        ds = dt.strftime("%Y-%m-%d")
-        if ds not in cn_holidays_2024_2026:
-            return ds
-        dt = dt - pd.Timedelta(days=1)
-
-    return date_str
+    return _llm_judge_trade_date(date_str)
 
 
 def build_config() -> dict:
@@ -224,7 +216,19 @@ def check_health() -> dict:
 
 
 def _prev_trading_day(n: int = 1) -> datetime:
+    from tradingagents_mcp.trade_calendar import get_trade_dates
+
+    trade_dates = get_trade_dates()
     dt = datetime.now()
+
+    if trade_dates:
+        count = 0
+        while count < n:
+            dt = dt - timedelta(days=1)
+            if dt.strftime("%Y-%m-%d") in trade_dates:
+                count += 1
+        return dt
+
     count = 0
     while count < n:
         dt = dt - timedelta(days=1)

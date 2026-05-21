@@ -39,11 +39,17 @@ def _screen_cn(
         return []
 
     col_map = {
-        "代码": "code", "名称": "name", "最新价": "close",
-        "涨跌幅": "pct_chg", "市盈率-动态": "pe",
-        "市净率": "pb", "总市值": "total_mv",
-        "流通市值": "circ_mv", "成交额": "amount",
-        "换手率": "turnover_rate", "量比": "volume_ratio",
+        "代码": "code",
+        "名称": "name",
+        "最新价": "close",
+        "涨跌幅": "pct_chg",
+        "市盈率-动态": "pe",
+        "市净率": "pb",
+        "总市值": "total_mv",
+        "流通市值": "circ_mv",
+        "成交额": "amount",
+        "换手率": "turnover_rate",
+        "量比": "volume_ratio",
         "60日中文名称": "industry",
     }
     df = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})

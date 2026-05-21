@@ -42,11 +42,8 @@ src/tradingagents/dataflows/realtime_news_utils.py
 src/tradingagents/dataflows/stock_api.py
 src/tradingagents/dataflows/stock_data_service.py
 src/tradingagents/dataflows/cache/__init__.py
-src/tradingagents/dataflows/cache/adaptive.py
 src/tradingagents/dataflows/cache/app_adapter.py
-src/tradingagents/dataflows/cache/db_cache.py
 src/tradingagents/dataflows/cache/file_cache.py
-src/tradingagents/dataflows/cache/integrated.py
 src/tradingagents/dataflows/news/__init__.py
 src/tradingagents/dataflows/news/chinese_finance.py
 src/tradingagents/dataflows/news/google_news.py
@@ -58,6 +55,9 @@ src/tradingagents/dataflows/providers/china/__init__.py
 src/tradingagents/dataflows/providers/china/akshare.py
 src/tradingagents/dataflows/providers/china/baostock.py
 src/tradingagents/dataflows/providers/china/fundamentals_snapshot.py
+src/tradingagents/dataflows/providers/china/internal.py
+src/tradingagents/dataflows/providers/china/internal_code_mapper.py
+src/tradingagents/dataflows/providers/china/internal_queries.py
 src/tradingagents/dataflows/providers/china/tushare.py
 src/tradingagents/dataflows/providers/examples/__init__.py
 src/tradingagents/dataflows/providers/examples/example_sdk.py

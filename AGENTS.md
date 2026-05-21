@@ -77,7 +77,16 @@ TradingAgents-MCP/
     │   ├── dataflows/           # 数据获取层
     │   │   ├── interface.py     # 统一数据接口 (set_config)
     │   │   ├── stock_api.py     # 股票API入口
+    │   │   ├── data_source_manager.py  # 数据源管理器（降级链: INTERNAL→AKSHARE→TUSHARE→BAOSTOCK）
     │   │   ├── providers/       # 数据供应商适配器 (A股/美股/港股)
+    │   │   │   ├── china/       # A股数据源
+    │   │   │   │   ├── internal.py           # TransMatrix 内部数据库 Provider
+    │   │   │   │   ├── internal_queries.py   # SQL 查询封装 (DatabaseConn)
+    │   │   │   │   ├── internal_code_mapper.py  # 代码格式转换 (000001↔000001.SZ)
+    │   │   │   │   ├── akshare.py            # AKShare适配器
+    │   │   │   │   ├── tushare.py            # Tushare适配器
+    │   │   │   │   ├── baostock.py           # BaoStock适配器
+    │   │   │   │   └── fundamentals_snapshot.py  # 基本面快照
     │   │   ├── news/            # 新闻数据源
     │   │   ├── technical/       # 技术指标 (stockstats)
     │   │   └── cache/           # 数据缓存
@@ -202,6 +211,18 @@ TradingAgents-MCP/
 | `MCP_PORT` | HTTP 监听端口 | 9000 |
 | `MCP_LOG_LEVEL` | 日志级别 (DEBUG/INFO/WARNING/ERROR/CRITICAL) | WARNING |
 
+### TransMatrix 内部数据库配置
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `DEFAULT_CHINA_DATA_SOURCE` | A股默认数据源 (internal/akshare/tushare/baostock) | internal |
+| `JDBC_HTTP_PROXY` | JDBC HTTP Proxy 地址 | 192.168.100.101:9998 |
+| `TM_REAL_CONN` | Hive JDBC 连接串 | jdbc:hive2://192.168.100.102:10006 |
+| `TM_DB_NAME` | 数据库名称 | meta_data |
+| `TM_DB_USER` | 数据库用户名 | transmatrix_admin |
+| `TM_DB_PASSWORD` | 数据库密码 | Transmatrix123 |
+| `GUARDIAN_TOKEN` | Guardian 认证 Token | UgJRRGe7qMAKcirOQ017-TDH |
+
 ### LLM 供应商 API Key
 
 根据 `MCP_LLM_PROVIDER` 的选择，需要设置对应的 API Key：
@@ -218,9 +239,10 @@ TradingAgents-MCP/
 
 | 市场 | 数据源 | 功能 |
 |------|--------|------|
-| A股 | AKShare | 行情/基本面/财务数据（主力） |
-| A股 | Tushare | 行情/基本面/财务数据（需Token） |
-| A股 | BaoStock | 行情/历史数据 |
+| A股 | TransMatrix 内部数据库 | 行情/K线/基本面/财务/资金流向/股东（最高优先级） |
+| A股 | AKShare | 行情/基本面/财务数据（降级） |
+| A股 | Tushare | 行情/基本面/财务数据（需Token，降级） |
+| A股 | BaoStock | 行情/历史数据（降级） |
 | 美股 | YFinance | 行情/基本面 |
 | 美股 | Finnhub | 新闻/数据（需API Key） |
 | 港股 | AKShare | 行情/基本面 |

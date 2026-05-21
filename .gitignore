@@ -1,3 +1,7 @@
 .idea/
 logs/
 src/tradingagents/dataflows/cache/data_cache/
+.venv/
+**/*.whl
+*.pdf
+

@@ -24,10 +24,8 @@ class DataSourceCode(str, Enum):
     - 保持简洁明了
     """
     
-    # ==================== 缓存数据源 ====================
-    MONGODB = "mongodb"  # MongoDB 数据库缓存（最高优先级）
-    
     # ==================== 中国市场数据源 ====================
+    INTERNAL = "internal"    # TransMatrix 内部数据库（最高优先级）
     TUSHARE = "tushare"      # Tushare - 专业A股数据
     AKSHARE = "akshare"      # AKShare - 开源金融数据（A股+港股）
     BAOSTOCK = "baostock"    # BaoStock - 免费A股数据
@@ -74,17 +72,17 @@ class DataSourceInfo:
 
 # ==================== 数据源注册表 ====================
 DATA_SOURCE_REGISTRY: Dict[str, DataSourceInfo] = {
-    # MongoDB 缓存
-    DataSourceCode.MONGODB: DataSourceInfo(
-        code=DataSourceCode.MONGODB,
-        name="MongoDB",
-        display_name="MongoDB 缓存",
-        provider="MongoDB Inc.",
-        description="本地 MongoDB 数据库缓存，最高优先级数据源",
-        supported_markets=["a_shares", "us_stocks", "hk_stocks", "crypto", "futures"],
+    # TransMatrix 内部数据库
+    DataSourceCode.INTERNAL: DataSourceInfo(
+        code=DataSourceCode.INTERNAL,
+        name="Internal",
+        display_name="TransMatrix 内部数据库",
+        provider="TransMatrix",
+        description="公司内部 TransMatrix 数据库，提供全量 A 股行情、K 线、财务数据",
+        supported_markets=["a_shares"],
         requires_api_key=False,
         is_free=True,
-        features=["本地缓存", "最快速度", "离线可用"],
+        features=["日K线", "分钟K线", "实时快照", "估值指标", "财务报表", "资金流向", "股东数据", "指数数据", "宏观数据"],
     ),
     
     # Tushare

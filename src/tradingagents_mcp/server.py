@@ -124,7 +124,7 @@ async def trading_agent(
 支持A股(如000001)、美股(如AAPL)、港股(如00700.HK)。
 
 Args:
-    symbol: 股票代码
+    symbol: 股票代码，如000001
     trade_date: 交易日期 YYYY-MM-DD
     analysts: 分析师组合，默认 ["market","social","news","fundamentals"]
     max_debate_rounds: 多空辩论轮次
@@ -193,11 +193,13 @@ async def market_analyst(
     """市场分析师Agent（独立运行）：获取行情数据并生成技术分析报告。
 
 分析内容：移动平均线、MACD、RSI、布林带、价格趋势、成交量。
-支持A股(AKShare/Tushare/BaoStock)、美股(YFinance)、港股(AKShare)，自动识别。
+支持A股(Internal内部数据/AKShare/Tushare/BaoStock)、美股(YFinance)、港股(AKShare)，自动识别。
 适合只需看技术面的场景，速度快（~30秒 vs 全流程3-5分钟）。
 
+支持A股(如000001)、美股(如AAPL)、港股(如00700.HK)。
+
 Args:
-    symbol: 股票代码
+    symbol: 股票代码，如000001
     trade_date: 交易日期 YYYY-MM-DD
 """
     try:
@@ -731,7 +733,7 @@ async def agent_status() -> dict:
             "screen_stocks": "股票筛选（条件筛选+LLM解读，~15秒）",
         },
         "data_sources": {
-            "A股": ["AKShare", "Tushare", "BaoStock"],
+            "A股": ["Internal", "AKShare", "Tushare", "BaoStock"],
             "美股": ["YFinance", "Finnhub", "Alpha Vantage"],
             "港股": ["AKShare"],
             "新闻": ["Google News", "Finnhub", "中文财经"],

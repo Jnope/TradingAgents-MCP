@@ -19,15 +19,6 @@ from tradingagents.config.runtime_settings import get_float, get_timezone_name
 from tradingagents.utils.logging_manager import get_logger
 logger = get_logger('agents')
 
-# 导入 MongoDB 缓存适配器
-try:
-    from .cache.mongodb_cache_adapter import get_mongodb_cache_adapter, get_stock_data_with_fallback, get_financial_data_with_fallback
-    MONGODB_CACHE_AVAILABLE = True
-except ImportError:
-    get_mongodb_cache_adapter = None
-    get_stock_data_with_fallback = None
-    get_financial_data_with_fallback = None
-    MONGODB_CACHE_AVAILABLE = False
 
 
 class OptimizedChinaDataProvider:
@@ -124,16 +115,7 @@ class OptimizedChinaDataProvider:
         """
         logger.info(f"📈 获取A股数据: {symbol} ({start_date} 到 {end_date})")
 
-        # 1. 优先尝试从MongoDB获取（如果启用了TA_USE_APP_CACHE）
-        if not force_refresh and get_mongodb_cache_adapter:
-            adapter = get_mongodb_cache_adapter()
-            if adapter.use_app_cache:
-                df = adapter.get_historical_data(symbol, start_date, end_date)
-                if df is not None and not df.empty:
-                    logger.info(f"📊 [数据来源: MongoDB] 使用MongoDB历史数据: {symbol} ({len(df)}条记录)")
-                    return df.to_string()
-
-        # 2. 检查文件缓存（除非强制刷新）
+        # 检查文件缓存（除非强制刷新）
         if not force_refresh:
             cache_key = self.cache.find_cached_stock_data(
                 symbol=symbol,
@@ -215,17 +197,7 @@ class OptimizedChinaDataProvider:
         """
         logger.info(f"📊 获取A股基本面数据: {symbol}")
 
-        # 1. 优先尝试从MongoDB获取财务数据（如果启用了TA_USE_APP_CACHE）
-        if not force_refresh and get_mongodb_cache_adapter:
-            adapter = get_mongodb_cache_adapter()
-            if adapter.use_app_cache:
-                financial_data = adapter.get_financial_data(symbol)
-                if financial_data:
-                    logger.info(f"💰 [数据来源: MongoDB财务数据] 使用MongoDB财务数据: {symbol}")
-                    # 将财务数据转换为基本面分析格式
-                    return self._format_financial_data_to_fundamentals(financial_data, symbol)
-
-        # 2. 检查文件缓存（除非强制刷新）
+        # 检查文件缓存（除非强制刷新）
         if not force_refresh:
             # 查找基本面数据缓存
             for metadata_file in self.cache.metadata_dir.glob(f"*_meta.json"):
@@ -829,7 +801,7 @@ class OptimizedChinaDataProvider:
         }
 
     def _estimate_financial_metrics(self, symbol: str, current_price: str) -> dict:
-        """获取真实财务指标（从 MongoDB、AKShare、Tushare 获取，失败则抛出异常）"""
+        """获取真实财务指标（从 AKShare、Tushare 获取，失败则抛出异常）"""
 
         # 提取价格数值
         try:
@@ -844,66 +816,14 @@ class OptimizedChinaDataProvider:
             return real_metrics
 
         # 如果无法获取真实数据，抛出异常
-        error_msg = f"无法获取股票 {symbol} 的财务数据。已尝试所有数据源（MongoDB、AKShare、Tushare）均失败。"
+        error_msg = f"无法获取股票 {symbol} 的财务数据。已尝试所有数据源（AKShare、Tushare）均失败。"
         logger.error(f"❌ {error_msg}")
         raise ValueError(error_msg)
 
     def _get_real_financial_metrics(self, symbol: str, price_value: float) -> dict:
-        """获取真实财务指标 - 优先使用数据库缓存，再使用API"""
+        """获取真实财务指标 - 优先使用AKShare，再使用Tushare"""
         try:
-            # 🔥 优先从 market_quotes 获取实时股价，替换传入的 price_value
-            from tradingagents.config.database_manager import get_database_manager
-            db_manager = get_database_manager()
-            db_client = None
-
-            if db_manager.is_mongodb_available():
-                try:
-                    db_client = db_manager.get_mongodb_client()
-                    db = db_client['tradingagents']
-
-                    # 标准化股票代码为6位
-                    code6 = symbol.replace('.SH', '').replace('.SZ', '').zfill(6)
-
-                    # 从 market_quotes 获取实时股价
-                    quote = db.market_quotes.find_one({"code": code6})
-                    if quote and quote.get("close"):
-                        realtime_price = float(quote.get("close"))
-                        logger.info(f"✅ 从 market_quotes 获取实时股价: {code6} = {realtime_price}元 (原价格: {price_value}元)")
-                        price_value = realtime_price
-                    else:
-                        logger.info(f"⚠️ market_quotes 中未找到{code6}的实时股价，使用传入价格: {price_value}元")
-                except Exception as e:
-                    logger.warning(f"⚠️ 从 market_quotes 获取实时股价失败: {e}，使用传入价格: {price_value}元")
-            else:
-                logger.info(f"⚠️ MongoDB 不可用，使用传入价格: {price_value}元")
-
-            # 第一优先级：从 MongoDB stock_financial_data 集合获取标准化财务数据
-            from tradingagents.config.runtime_settings import use_app_cache_enabled
-            if use_app_cache_enabled(False):
-                logger.info(f"🔍 优先从 MongoDB stock_financial_data 集合获取{symbol}财务数据")
-
-                try:
-                    from tradingagents.dataflows.cache.mongodb_cache_adapter import get_mongodb_cache_adapter
-                    adapter = get_mongodb_cache_adapter()
-                    financial_data = adapter.get_financial_data(symbol)
-                except (ImportError, Exception):
-                    financial_data = None
-
-                if financial_data:
-                    logger.info(f"✅ [财务数据] 从 stock_financial_data 集合获取{symbol}财务数据")
-                    # 解析 MongoDB 标准化的财务数据
-                    metrics = self._parse_mongodb_financial_data(financial_data, price_value)
-                    if metrics:
-                        logger.info(f"✅ MongoDB 财务数据解析成功，返回指标")
-                        return metrics
-                    else:
-                        logger.warning(f"⚠️ MongoDB 财务数据解析失败")
-                else:
-                    logger.info(f"🔄 MongoDB 未找到{symbol}财务数据，尝试从 AKShare API 获取")
-            else:
-                logger.info(f"🔄 数据库缓存未启用，直接从AKShare API获取{symbol}财务数据")
-
-            # 第二优先级：从AKShare API获取
+            # 从AKShare API获取
             from .providers.china.akshare import get_akshare_provider
             import asyncio
 
@@ -925,8 +845,6 @@ class OptimizedChinaDataProvider:
                     logger.debug(f"🔧 AKShare解析结果: {metrics}")
                     if metrics:
                         logger.info(f"✅ AKShare解析成功，返回指标")
-                        # 缓存原始财务数据到数据库（而不是解析后的指标）
-                        self._cache_raw_financial_data(symbol, financial_data, stock_info)
                         return metrics
                     else:
                         logger.warning(f"⚠️ AKShare解析失败，返回None")
@@ -958,8 +876,6 @@ class OptimizedChinaDataProvider:
             # 解析Tushare财务数据
             metrics = self._parse_financial_data(financial_data, stock_info, price_value)
             if metrics:
-                # 缓存原始财务数据到数据库
-                self._cache_raw_financial_data(symbol, financial_data, stock_info)
                 return metrics
 
         except Exception as e:
@@ -1055,86 +971,81 @@ class OptimizedChinaDataProvider:
             try:
                 # 优先使用实时计算
                 from tradingagents.dataflows.realtime_metrics import get_pe_pb_with_fallback
-                from tradingagents.config.database_manager import get_database_manager
 
-                db_manager = get_database_manager()
-                if db_manager.is_mongodb_available():
-                    client = db_manager.get_mongodb_client()
-                    # 从symbol中提取股票代码
-                    stock_code = latest_indicators.get('code') or latest_indicators.get('symbol', '').replace('.SZ', '').replace('.SH', '')
+                stock_code = latest_indicators.get('code') or latest_indicators.get('symbol', '').replace('.SZ', '').replace('.SH', '')
 
-                    logger.info(f"📊 [PE计算] 开始计算股票 {stock_code} 的PE/PB")
+                logger.info(f"📊 [PE计算] 开始计算股票 {stock_code} 的PE/PB")
 
-                    if stock_code:
-                        logger.info(f"📊 [PE计算-第1层] 尝试实时计算 PE/PB (股票代码: {stock_code})")
+                if stock_code:
+                    logger.info(f"📊 [PE计算-第1层] 尝试实时计算 PE/PB (股票代码: {stock_code})")
 
-                        # 获取实时PE/PB
-                        realtime_metrics = get_pe_pb_with_fallback(stock_code, client)
+                    # 获取实时PE/PB
+                    realtime_metrics = get_pe_pb_with_fallback(stock_code)
 
-                        if realtime_metrics:
-                            # 获取市值数据（优先保存）
-                            market_cap = realtime_metrics.get('market_cap')
-                            if market_cap is not None and market_cap > 0:
-                                is_realtime = realtime_metrics.get('is_realtime', False)
-                                realtime_tag = " (实时)" if is_realtime else ""
-                                metrics["total_mv"] = f"{market_cap:.2f}亿元{realtime_tag}"
-                                logger.info(f"✅ [总市值获取成功] 总市值={market_cap:.2f}亿元 | 实时={is_realtime}")
+                    if realtime_metrics:
+                        # 获取市值数据（优先保存）
+                        market_cap = realtime_metrics.get('market_cap')
+                        if market_cap is not None and market_cap > 0:
+                            is_realtime = realtime_metrics.get('is_realtime', False)
+                            realtime_tag = " (实时)" if is_realtime else ""
+                            metrics["total_mv"] = f"{market_cap:.2f}亿元{realtime_tag}"
+                            logger.info(f"✅ [总市值获取成功] 总市值={market_cap:.2f}亿元 | 实时={is_realtime}")
 
-                            # 使用实时PE（动态市盈率）
-                            pe_value = realtime_metrics.get('pe')
-                            if pe_value is not None and pe_value > 0:
-                                is_realtime = realtime_metrics.get('is_realtime', False)
-                                realtime_tag = " (实时)" if is_realtime else ""
-                                metrics["pe"] = f"{pe_value:.1f}倍{realtime_tag}"
+                        # 使用实时PE（动态市盈率）
+                        pe_value = realtime_metrics.get('pe')
+                        if pe_value is not None and pe_value > 0:
+                            is_realtime = realtime_metrics.get('is_realtime', False)
+                            realtime_tag = " (实时)" if is_realtime else ""
+                            metrics["pe"] = f"{pe_value:.1f}倍{realtime_tag}"
 
-                                # 详细日志
-                                price = realtime_metrics.get('price', 'N/A')
-                                market_cap_log = realtime_metrics.get('market_cap', 'N/A')
-                                source = realtime_metrics.get('source', 'unknown')
-                                updated_at = realtime_metrics.get('updated_at', 'N/A')
+                            # 详细日志
+                            price = realtime_metrics.get('price', 'N/A')
+                            market_cap_log = realtime_metrics.get('market_cap', 'N/A')
+                            source = realtime_metrics.get('source', 'unknown')
+                            updated_at = realtime_metrics.get('updated_at', 'N/A')
 
-                                logger.info(f"✅ [PE计算-第1层成功] PE={pe_value:.2f}倍 | 来源={source} | 实时={is_realtime}")
-                                logger.info(f"   └─ 计算数据: 股价={price}元, 市值={market_cap_log}亿元, 更新时间={updated_at}")
-                            elif pe_value is None:
-                                # 🔥 PE 为 None，检查是否是亏损股
-                                pe_ttm_check = latest_indicators.get('pe_ttm')
-                                # pe_ttm 为 None、<= 0、'nan'、'--' 都认为是亏损股
-                                if pe_ttm_check is None or pe_ttm_check <= 0 or str(pe_ttm_check) == 'nan' or pe_ttm_check == '--':
-                                    is_loss_stock = True
-                                    logger.info(f"⚠️ [PE计算-第1层] PE为None且pe_ttm={pe_ttm_check}，确认为亏损股")
-
-                            # 使用实时PE_TTM（TTM市盈率）
-                            pe_ttm_value = realtime_metrics.get('pe_ttm')
-                            if pe_ttm_value is not None and pe_ttm_value > 0:
-                                is_realtime = realtime_metrics.get('is_realtime', False)
-                                realtime_tag = " (实时)" if is_realtime else ""
-                                metrics["pe_ttm"] = f"{pe_ttm_value:.1f}倍{realtime_tag}"
-                                logger.info(f"✅ [PE_TTM计算-第1层成功] PE_TTM={pe_ttm_value:.2f}倍 | 来源={source} | 实时={is_realtime}")
-                            elif pe_ttm_value is None and not is_loss_stock:
-                                # 🔥 PE_TTM 为 None，再次检查是否是亏损股
-                                pe_ttm_check = latest_indicators.get('pe_ttm')
-                                # pe_ttm 为 None、<= 0、'nan'、'--' 都认为是亏损股
-                                if pe_ttm_check is None or pe_ttm_check <= 0 or str(pe_ttm_check) == 'nan' or pe_ttm_check == '--':
-                                    is_loss_stock = True
-                                    logger.info(f"⚠️ [PE_TTM计算-第1层] PE_TTM为None且pe_ttm={pe_ttm_check}，确认为亏损股")
-
-                            # 使用实时PB
-                            pb_value = realtime_metrics.get('pb')
-                            if pb_value is not None and pb_value > 0:
-                                is_realtime = realtime_metrics.get('is_realtime', False)
-                                realtime_tag = " (实时)" if is_realtime else ""
-                                metrics["pb"] = f"{pb_value:.2f}倍{realtime_tag}"
-                                logger.info(f"✅ [PB计算-第1层成功] PB={pb_value:.2f}倍 | 来源={realtime_metrics.get('source')} | 实时={is_realtime}")
-                        else:
-                            # 🔥 检查是否因为亏损导致返回 None
-                            # 从 stock_basic_info 获取 pe_ttm 判断是否亏损
-                            pe_ttm_static = latest_indicators.get('pe_ttm')
+                            logger.info(f"✅ [PE计算-第1层成功] PE={pe_value:.2f}倍 | 来源={source} | 实时={is_realtime}")
+                            logger.info(f"   └─ 计算数据: 股价={price}元, 市值={market_cap_log}亿元, 更新时间={updated_at}")
+                        elif pe_value is None:
+                            # 🔥 PE 为 None，检查是否是亏损股
+                            pe_ttm_check = latest_indicators.get('pe_ttm')
                             # pe_ttm 为 None、<= 0、'nan'、'--' 都认为是亏损股
-                            if pe_ttm_static is None or pe_ttm_static <= 0 or str(pe_ttm_static) == 'nan' or pe_ttm_static == '--':
+                            if pe_ttm_check is None or pe_ttm_check <= 0 or str(pe_ttm_check) == 'nan' or pe_ttm_check == '--':
                                 is_loss_stock = True
-                                logger.info(f"⚠️ [PE计算-第1层失败] 检测到亏损股（pe_ttm={pe_ttm_static}），跳过降级计算")
-                            else:
-                                logger.warning(f"⚠️ [PE计算-第1层失败] 实时计算返回空结果，将尝试降级计算")
+                                logger.info(f"⚠️ [PE计算-第1层] PE为None且pe_ttm={pe_ttm_check}，确认为亏损股")
+
+                        # 使用实时PE_TTM（TTM市盈率）
+                        pe_ttm_value = realtime_metrics.get('pe_ttm')
+                        if pe_ttm_value is not None and pe_ttm_value > 0:
+                            is_realtime = realtime_metrics.get('is_realtime', False)
+                            realtime_tag = " (实时)" if is_realtime else ""
+                            metrics["pe_ttm"] = f"{pe_ttm_value:.1f}倍{realtime_tag}"
+                            logger.info(f"✅ [PE_TTM计算-第1层成功] PE_TTM={pe_ttm_value:.2f}倍 | 来源={source} | 实时={is_realtime}")
+                        elif pe_ttm_value is None and not is_loss_stock:
+                            # 🔥 PE_TTM 为 None，再次检查是否是亏损股
+                            pe_ttm_check = latest_indicators.get('pe_ttm')
+                            # pe_ttm 为 None、<= 0、'nan'、'--' 都认为是亏损股
+                            if pe_ttm_check is None or pe_ttm_check <= 0 or str(pe_ttm_check) == 'nan' or pe_ttm_check == '--':
+                                is_loss_stock = True
+                                logger.info(f"⚠️ [PE_TTM计算-第1层] PE_TTM为None且pe_ttm={pe_ttm_check}，确认为亏损股")
+
+                        # 使用实时PB
+                        pb_value = realtime_metrics.get('pb')
+                        if pb_value is not None and pb_value > 0:
+                            is_realtime = realtime_metrics.get('is_realtime', False)
+                            realtime_tag = " (实时)" if is_realtime else ""
+                            metrics["pb"] = f"{pb_value:.2f}倍{realtime_tag}"
+                            logger.info(f"✅ [PB计算-第1层成功] PB={pb_value:.2f}倍 | 来源={realtime_metrics.get('source')} | 实时={is_realtime}")
+                    else:
+                        # 🔥 检查是否因为亏损导致返回 None
+                        # 从 stock_basic_info 获取 pe_ttm 判断是否亏损
+                        pe_ttm_static = latest_indicators.get('pe_ttm')
+                        # pe_ttm 为 None、<= 0、'nan'、'--' 都认为是亏损股
+                        if pe_ttm_static is None or pe_ttm_static <= 0 or str(pe_ttm_static) == 'nan' or pe_ttm_static == '--':
+                            is_loss_stock = True
+                            logger.info(f"⚠️ [PE计算-第1层失败] 检测到亏损股（pe_ttm={pe_ttm_static}），跳过降级计算")
+                        else:
+                            logger.warning(f"⚠️ [PE计算-第1层失败] 实时计算返回空结果，将尝试降级计算")
 
             except Exception as e:
                 logger.warning(f"⚠️ [PE计算-第1层异常] 实时计算失败: {e}，将尝试降级计算")
@@ -1410,50 +1321,44 @@ class OptimizedChinaDataProvider:
                 if stock_code:
                     logger.info(f"📊 [AKShare-PE计算-第1层] 尝试使用实时PE/PB计算: {stock_code}")
 
-                    from tradingagents.config.database_manager import get_database_manager
                     from tradingagents.dataflows.realtime_metrics import get_pe_pb_with_fallback
 
-                    db_manager = get_database_manager()
-                    if db_manager.is_mongodb_available():
-                        client = db_manager.get_mongodb_client()
+                    realtime_metrics = get_pe_pb_with_fallback(stock_code)
 
-                        # 获取实时PE/PB
-                        realtime_metrics = get_pe_pb_with_fallback(stock_code, client)
+                    if realtime_metrics:
+                        # 获取总市值
+                        market_cap = realtime_metrics.get('market_cap')
+                        if market_cap is not None and market_cap > 0:
+                            is_realtime = realtime_metrics.get('is_realtime', False)
+                            realtime_tag = " (实时)" if is_realtime else ""
+                            metrics["total_mv"] = f"{market_cap:.2f}亿元{realtime_tag}"
+                            logger.info(f"✅ [AKShare-总市值获取成功] 总市值={market_cap:.2f}亿元 | 实时={is_realtime}")
 
-                        if realtime_metrics:
-                            # 获取总市值
-                            market_cap = realtime_metrics.get('market_cap')
-                            if market_cap is not None and market_cap > 0:
-                                is_realtime = realtime_metrics.get('is_realtime', False)
-                                realtime_tag = " (实时)" if is_realtime else ""
-                                metrics["total_mv"] = f"{market_cap:.2f}亿元{realtime_tag}"
-                                logger.info(f"✅ [AKShare-总市值获取成功] 总市值={market_cap:.2f}亿元 | 实时={is_realtime}")
+                        # 使用实时PE
+                        pe_value = realtime_metrics.get('pe')
+                        if pe_value is not None and pe_value > 0:
+                            is_realtime = realtime_metrics.get('is_realtime', False)
+                            realtime_tag = " (实时)" if is_realtime else ""
+                            metrics["pe"] = f"{pe_value:.1f}倍{realtime_tag}"
+                            logger.info(f"✅ [AKShare-PE计算-第1层成功] PE={pe_value:.2f}倍 | 来源={realtime_metrics.get('source')} | 实时={is_realtime}")
 
-                            # 使用实时PE
-                            pe_value = realtime_metrics.get('pe')
-                            if pe_value is not None and pe_value > 0:
-                                is_realtime = realtime_metrics.get('is_realtime', False)
-                                realtime_tag = " (实时)" if is_realtime else ""
-                                metrics["pe"] = f"{pe_value:.1f}倍{realtime_tag}"
-                                logger.info(f"✅ [AKShare-PE计算-第1层成功] PE={pe_value:.2f}倍 | 来源={realtime_metrics.get('source')} | 实时={is_realtime}")
+                        # 使用实时PE_TTM
+                        pe_ttm_value = realtime_metrics.get('pe_ttm')
+                        if pe_ttm_value is not None and pe_ttm_value > 0:
+                            is_realtime = realtime_metrics.get('is_realtime', False)
+                            realtime_tag = " (实时)" if is_realtime else ""
+                            metrics["pe_ttm"] = f"{pe_ttm_value:.1f}倍{realtime_tag}"
+                            logger.info(f"✅ [AKShare-PE_TTM计算-第1层成功] PE_TTM={pe_ttm_value:.2f}倍")
 
-                            # 使用实时PE_TTM
-                            pe_ttm_value = realtime_metrics.get('pe_ttm')
-                            if pe_ttm_value is not None and pe_ttm_value > 0:
-                                is_realtime = realtime_metrics.get('is_realtime', False)
-                                realtime_tag = " (实时)" if is_realtime else ""
-                                metrics["pe_ttm"] = f"{pe_ttm_value:.1f}倍{realtime_tag}"
-                                logger.info(f"✅ [AKShare-PE_TTM计算-第1层成功] PE_TTM={pe_ttm_value:.2f}倍")
-
-                            # 使用实时PB
-                            pb_value = realtime_metrics.get('pb')
-                            if pb_value is not None and pb_value > 0:
-                                is_realtime = realtime_metrics.get('is_realtime', False)
-                                realtime_tag = " (实时)" if is_realtime else ""
-                                metrics["pb"] = f"{pb_value:.2f}倍{realtime_tag}"
-                                logger.info(f"✅ [AKShare-PB计算-第1层成功] PB={pb_value:.2f}倍")
-                        else:
-                            logger.warning(f"⚠️ [AKShare-PE计算-第1层失败] 实时计算返回空结果，将尝试降级计算")
+                        # 使用实时PB
+                        pb_value = realtime_metrics.get('pb')
+                        if pb_value is not None and pb_value > 0:
+                            is_realtime = realtime_metrics.get('is_realtime', False)
+                            realtime_tag = " (实时)" if is_realtime else ""
+                            metrics["pb"] = f"{pb_value:.2f}倍{realtime_tag}"
+                            logger.info(f"✅ [AKShare-PB计算-第1层成功] PB={pb_value:.2f}倍")
+                    else:
+                        logger.warning(f"⚠️ [AKShare-PE计算-第1层失败] 实时计算返回空结果，将尝试降级计算")
             except Exception as e:
                 logger.warning(f"⚠️ [AKShare-PE计算-第1层异常] 实时计算失败: {e}，将尝试降级计算")
 
