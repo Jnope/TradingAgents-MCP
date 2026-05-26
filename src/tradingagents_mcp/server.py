@@ -32,6 +32,7 @@ from tradingagents_mcp.screen import (
     screen_stocks_online,
     format_screening_items,
 )
+from tradingagents_mcp.shared_context import get_shared_ctx
 
 logger = logging.getLogger("mcp_server")
 
@@ -48,13 +49,7 @@ async def _run_single_analyst(
     ctx: Context = None,
     extra_state: dict = None,
 ) -> dict:
-    from tradingagents.graph.trading_graph import TradingAgentsGraph
-
-    config = build_config()
-    config["online_tools"] = config.get("online_tools", True)
-    config["online_news"] = config.get("online_news", True)
-
-    ta = TradingAgentsGraph(selected_analysts=[analyst_type], debug=False, config=config)
+    ctx_ = get_shared_ctx()
 
     from langchain_core.messages import HumanMessage
 
@@ -90,9 +85,9 @@ async def _run_single_analyst(
         "social": create_social_media_analyst,
     }[analyst_type]
 
-    node = create_fn(ta.quick_thinking_llm, ta.toolkit)
+    node = create_fn(ctx_.quick_thinking_llm, ctx_.toolkit)
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     result_state = await loop.run_in_executor(None, lambda: node(state))
 
     report = result_state.get(report_key, "")
@@ -144,7 +139,7 @@ Args:
         await ctx.info(f"TradingAgent 开始分析: {symbol}({market}) @ {trade_date}")
 
     try:
-        from tradingagents.graph.trading_graph import TradingAgentsGraph
+        shared = get_shared_ctx()
 
         config = build_config()
         config["max_debate_rounds"] = max_debate_rounds
@@ -152,7 +147,7 @@ Args:
         config["online_tools"] = config.get("online_tools", True)
         config["online_news"] = config.get("online_news", True)
 
-        ta = TradingAgentsGraph(selected_analysts=analysts, debug=False, config=config)
+        ta = shared.get_graph(analysts, config=config)
 
         loop = asyncio.get_event_loop()
         state, decision = await loop.run_in_executor(
@@ -364,19 +359,18 @@ Args:
         await ctx.info(f"多股对比分析: {symbols} @ {trade_date}, 维度={analyst}")
 
     try:
+        shared = get_shared_ctx()
         individual_results = {}
 
         if analyst == "full":
-            from tradingagents.graph.trading_graph import TradingAgentsGraph
-
             config = build_config()
             config["max_debate_rounds"] = max_debate_rounds
             config["max_risk_discuss_rounds"] = max_risk_discuss_rounds
 
             async def _run_full(sym):
-                ta = TradingAgentsGraph(
-                    selected_analysts=["market", "social", "news", "fundamentals"],
-                    debug=False, config=config,
+                ta = shared.get_graph(
+                    ["market", "social", "news", "fundamentals"],
+                    config=config,
                 )
                 loop = asyncio.get_event_loop()
                 state, decision = await loop.run_in_executor(
@@ -415,12 +409,9 @@ Args:
             "3. 每只股票的评分（0-100）和推荐理由\n"
         )
 
-        from tradingagents.graph.trading_graph import TradingAgentsGraph
-        config = build_config()
-        ta = TradingAgentsGraph(selected_analysts=["market"], debug=False, config=config)
         loop = asyncio.get_event_loop()
         comparison_report = await loop.run_in_executor(
-            None, lambda: ta.quick_thinking_llm.invoke(comparison_prompt).content
+            None, lambda: shared.quick_thinking_llm.invoke(comparison_prompt).content
         )
 
         return {
@@ -544,17 +535,11 @@ Args:
         await ctx.info(f"历史区间对比: {symbol}({market}) {start_date}~{end_date}" + (f" vs {compare_with}" if compare_with else ""))
 
     try:
-        from tradingagents.graph.trading_graph import TradingAgentsGraph
-
+        shared = get_shared_ctx()
         loop = asyncio.get_event_loop()
 
-        config = build_config()
-        config["online_tools"] = config.get("online_tools", True)
-        config["online_news"] = config.get("online_news", True)
-        ta = TradingAgentsGraph(selected_analysts=["market"], debug=False, config=config)
-
         symbol_data = await loop.run_in_executor(
-            None, lambda: ta.toolkit.get_stock_market_data_unified(symbol, start_date, end_date)
+            None, lambda: shared.toolkit.get_stock_market_data_unified(symbol, start_date, end_date)
         )
 
         if not symbol_data:
@@ -566,7 +551,7 @@ Args:
         compare_stats = None
         if compare_with:
             compare_data = await loop.run_in_executor(
-                None, lambda: ta.toolkit.get_stock_market_data_unified(compare_with, start_date, end_date)
+                None, lambda: shared.toolkit.get_stock_market_data_unified(compare_with, start_date, end_date)
             )
             if compare_data:
                 compare_stats = calc_period_stats(compare_data)
@@ -608,11 +593,8 @@ Args:
             "4. 后市展望建议\n"
         )
 
-        from tradingagents.graph.trading_graph import TradingAgentsGraph
-        config = build_config()
-        ta = TradingAgentsGraph(selected_analysts=["market"], debug=False, config=config)
         analysis_report = await loop.run_in_executor(
-            None, lambda: ta.quick_thinking_llm.invoke(analysis_prompt).content
+            None, lambda: shared.quick_thinking_llm.invoke(analysis_prompt).content
         )
 
         return {
@@ -678,11 +660,9 @@ Args:
                 "3. 潜在风险提示\n"
             )
 
-            from tradingagents.graph.trading_graph import TradingAgentsGraph
-            config = build_config()
-            ta = TradingAgentsGraph(selected_analysts=["market"], debug=False, config=config)
+            shared = get_shared_ctx()
             analysis_report = await loop.run_in_executor(
-                None, lambda: ta.quick_thinking_llm.invoke(analysis_prompt).content
+                None, lambda: shared.quick_thinking_llm.invoke(analysis_prompt).content
             )
         else:
             analysis_report = "未找到符合筛选条件的股票。建议放宽条件重试。"
@@ -716,10 +696,6 @@ async def agent_status() -> dict:
         "success": True,
         "version": "1.0.0-preview",
         "health": health,
-        "llm_provider": config.get("llm_provider"),
-        "deep_think_llm": config.get("deep_think_llm"),
-        "quick_think_llm": config.get("quick_think_llm"),
-        "online_tools": config.get("online_tools", False),
         "supported_markets": ["A股", "美股", "港股"],
         "available_tools": {
             "trading_agent": "完整全流程分析（分析师→辩论→风险→决策，3-10分钟）",
@@ -739,6 +715,8 @@ async def agent_status() -> dict:
             "新闻": ["Google News", "Finnhub", "中文财经"],
             "情绪": ["Reddit", "雪球/东财股吧/新浪财经"],
         },
+        **config,
+        "online_tools": config.get("online_tools", False),
     }
 
 

@@ -19,8 +19,8 @@
         "JDBC_HTTP_PROXY": "192.168.100.101:9998",
         "TM_REAL_CONN": "jdbc:hive2://172.18.192.74:10000",
         "TM_DB_NAME": "meta_data",
-        "TM_DB_USER": "transmatrix_admin",
-        "TM_DB_PASSWORD": "Transmatrix123",
+        "TM_DB_USER": "admin",
+        "TM_DB_PASSWORD": "admin",
         "GUARDIAN_TOKEN": "UgJRRGe7qMAKcirOQ017-TDH"
       }
     }

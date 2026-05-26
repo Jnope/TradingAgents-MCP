@@ -4,4 +4,7 @@ src/tradingagents/dataflows/cache/data_cache/
 .venv/
 **/*.whl
 *.pdf
-
+build/
+*.docx
+MCP_*.md
+eval_results/

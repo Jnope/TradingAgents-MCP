@@ -1,22 +1,13 @@
-from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, AIMessage
-from typing import List
 from typing import Annotated
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import RemoveMessage
 from langchain_core.tools import tool
-from datetime import date, timedelta, datetime
-import functools
-import pandas as pd
-import os
-from dateutil.relativedelta import relativedelta
-from langchain_openai import ChatOpenAI
+from datetime import datetime
 import tradingagents.dataflows.interface as interface
 from tradingagents.default_config import DEFAULT_CONFIG
 from langchain_core.messages import HumanMessage
 
 # 导入统一日志系统和工具日志装饰器
-from tradingagents.utils.logging_init import get_logger
-from tradingagents.utils.tool_logging import log_tool_call, log_analysis_step
+from tradingagents.utils.tool_logging import log_tool_call
 
 # 导入日志模块
 from tradingagents.utils.logging_manager import get_logger
@@ -40,21 +31,23 @@ def create_msg_delete():
 
 
 class Toolkit:
-    _config = DEFAULT_CONFIG.copy()
+    _class_config = DEFAULT_CONFIG.copy()
 
     @classmethod
     def update_config(cls, config):
-        """Update the class-level configuration."""
-        cls._config.update(config)
+        """Update the class-level configuration (backward compat)."""
+        cls._class_config.update(config)
 
     @property
     def config(self):
-        """Access the configuration."""
-        return self._config
+        """Access the instance configuration."""
+        return self._instance_config
 
     def __init__(self, config=None):
+        self._instance_config = DEFAULT_CONFIG.copy()
         if config:
-            self.update_config(config)
+            self._instance_config.update(config)
+            Toolkit._class_config.update(config)
 
     @staticmethod
     @tool
@@ -715,7 +708,7 @@ class Toolkit:
         logger.info(f"📊 [统一基本面工具] 分析股票: {ticker}")
 
         # 🔧 获取分析级别配置，支持基于级别的数据获取策略
-        research_depth = Toolkit._config.get('research_depth', '标准')
+        research_depth = Toolkit._class_config.get('research_depth', '标准')
         logger.info(f"🔧 [分析级别] 当前分析级别: {research_depth}")
         
         # 数字等级到中文等级的映射

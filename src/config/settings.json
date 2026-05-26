@@ -10,7 +10,8 @@
   "max_debate_rounds": 1,
   "max_risk_discuss_rounds": 1,
   "max_recur_limit": 100,
-  "online_tools": true,
+  "online_tools": false,
   "online_news": true,
-  "realtime_data": false
+  "realtime_data": false,
+  "deep_api_key": "llmops-zhenjiang-368c5e8878cf7b0f55b02401fab49aec"
 }

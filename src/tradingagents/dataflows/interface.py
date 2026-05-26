@@ -1423,7 +1423,7 @@ def get_china_stock_data_unified(
     original_start_date = start_date
     original_end_date = end_date
 
-    lookback_days = int(os.environ.get("MARKET_ANALYST_LOOKBACK_DAYS", "30"))
+    lookback_days = int(os.environ.get("MARKET_ANALYST_LOOKBACK_DAYS", "120"))
 
     start_date, end_date = get_trading_date_range(end_date, lookback_days=lookback_days)
 

@@ -179,11 +179,57 @@ def build_config() -> dict:
         "MCP_ONLINE_NEWS": ("online_news", lambda v: v.lower() == "true"),
         "MCP_MAX_DEBATE_ROUNDS": ("max_debate_rounds", int),
         "MCP_MAX_RISK_DISCUSS_ROUNDS": ("max_risk_discuss_rounds", int),
+        "MCP_QUICK_PROVIDER": ("quick_provider", str),
+        "MCP_DEEP_PROVIDER": ("deep_provider", str),
+        "MCP_QUICK_BACKEND_URL": ("quick_backend_url", str),
+        "MCP_DEEP_BACKEND_URL": ("deep_backend_url", str),
+        "MCP_QUICK_API_KEY": ("quick_api_key", str),
+        "MCP_DEEP_API_KEY": ("deep_api_key", str),
     }
     for env_key, (config_key, type_fn) in env_map.items():
         val = os.getenv(env_key)
         if val is not None:
             config[config_key] = type_fn(val)
+
+    model_param_map = {
+        "MCP_DEEP_MAX_TOKENS": ("deep_model_config", "max_tokens", int),
+        "MCP_QUICK_MAX_TOKENS": ("quick_model_config", "max_tokens", int),
+        "MCP_DEEP_TEMPERATURE": ("deep_model_config", "temperature", float),
+        "MCP_QUICK_TEMPERATURE": ("quick_model_config", "temperature", float),
+        "MCP_DEEP_TIMEOUT": ("deep_model_config", "timeout", int),
+        "MCP_QUICK_TIMEOUT": ("quick_model_config", "timeout", int),
+    }
+    for env_key, (config_key, param_key, type_fn) in model_param_map.items():
+        val = os.getenv(env_key)
+        if val is not None:
+            config.setdefault(config_key, {})[param_key] = type_fn(val)
+
+    provider_key_fallback = {
+        "openai": ("OPENAI_API_KEY", "openai_api_key"),
+        "dashscope": ("DASHSCOPE_API_KEY", "dashscope_api_key"),
+        "alibaba": ("DASHSCOPE_API_KEY", "dashscope_api_key"),
+        "google": ("GOOGLE_API_KEY", "google_api_key"),
+        "anthropic": ("ANTHROPIC_API_KEY", "anthropic_api_key"),
+        "deepseek": ("DEEPSEEK_API_KEY", "deepseek_api_key"),
+        "siliconflow": ("SILICONFLOW_API_KEY", "siliconflow_api_key"),
+        "openrouter": ("OPENROUTER_API_KEY", "openrouter_api_key"),
+        "ollama": (None, None),
+        "zhipu": ("ZHIPU_API_KEY", "zhipu_api_key"),
+        "qianfan": ("QIANFAN_API_KEY", "qianfan_api_key"),
+        "custom_openai": ("CUSTOM_OPENAI_API_KEY", "custom_openai_api_key"),
+    }
+    provider = config.get("llm_provider", "").lower()
+    fallback = provider_key_fallback.get(provider)
+    if fallback and fallback[0]:
+        env_var, _ = fallback
+        quick_key = config.get("quick_api_key")
+        deep_key = config.get("deep_api_key")
+        if not quick_key and not deep_key:
+            env_val = os.getenv(env_var)
+            if env_val:
+                config.setdefault("quick_api_key", env_val)
+                config.setdefault("deep_api_key", env_val)
+
     return config
 
 
@@ -191,15 +237,24 @@ def check_health() -> dict:
     config = build_config()
     health = {"mcp_server": "ok"}
 
-    llm_provider = config.get("llm_provider", "")
+    llm_provider = config.get("llm_provider", "").lower()
     key_map = {
         "openai": "OPENAI_API_KEY",
         "dashscope": "DASHSCOPE_API_KEY",
+        "alibaba": "DASHSCOPE_API_KEY",
         "google": "GOOGLE_API_KEY",
         "anthropic": "ANTHROPIC_API_KEY",
         "deepseek": "DEEPSEEK_API_KEY",
+        "siliconflow": "SILICONFLOW_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY",
+        "zhipu": "ZHIPU_API_KEY",
+        "qianfan": "QIANFAN_API_KEY",
+        "custom_openai": "CUSTOM_OPENAI_API_KEY",
     }
+    has_config_key = bool(config.get("quick_api_key") or config.get("deep_api_key"))
     expected_key = key_map.get(llm_provider)
+    if has_config_key:
+        expected_key = None
     if expected_key and not os.getenv(expected_key):
         health["llm_api_key"] = f"missing: {expected_key}"
     else:

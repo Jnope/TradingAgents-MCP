@@ -145,21 +145,24 @@ Step 4: 调用工具（此时才可调用 MCP Tool）
         ▼
    询问用户："请问您需要哪种分析？
      1. 全面分析（trading_agent）— 包含技术面+基本面+新闻+情绪+多空辩论+风险讨论+最终决策，耗时3-10分钟
-     2. 仅技术面（market_analyst）— K线/均线/MACD/RSI等，约30秒
-     3. 仅基本面（fundamentals_analyst）— PE/PB/ROE/估值等，约30秒
-     4. 仅新闻（news_analyst）— 重大事件/政策/行业动态，约30秒
-     5. 仅情绪（social_analyst）— 投资者情绪/讨论热度，约30秒"
+     2. 自定义组合决策（trading_agent + analysts）— 自选1-4个分析师走完整决策流程（辩论+风险+交易决策），耗时1-10分钟
+     3. 仅技术面（market_analyst）— K线/均线/MACD/RSI等，约30秒
+     4. 仅基本面（fundamentals_analyst）— PE/PB/ROE/估值等，约30秒
+     5. 仅新闻（news_analyst）— 重大事件/政策/行业动态，约30秒
+     6. 仅情绪（social_analyst）— 投资者情绪/讨论热度，约30秒"
         │
         ▼
    用户选择后，使用对应工具
 ```
 
 **关键规则**:
-- 用户说"全面分析"/"投资建议"/"要不要买" → 默认 `trading_agent`
+- 用户说"全面分析"/"投资建议"/"要不要买" → 默认 `trading_agent`（4个分析师）
 - 用户说"看看技术面"/"走势" → `market_analyst`
 - 用户说"估值"/"基本面" → `fundamentals_analyst`
 - 用户说"有什么新闻" → `news_analyst`
 - 用户说"大家怎么看" → `social_analyst`
+- 用户说"技术面+决策"/"只看技术面给出建议" → `trading_agent` + `analysts=["market"]`
+- 用户说"技术和基本面综合决策" → `trading_agent` + `analysts=["market","fundamentals"]`
 - **模糊表述时（如"分析一下"）必须询问确认，不得自行假设为全流程分析**
 
 ### Step 4: 环境检查（首次使用时执行一次即可）
@@ -234,6 +237,15 @@ Step 4: 调用工具（此时才可调用 MCP Tool）
 | `total_time_minutes` | 总耗时(分钟)，可能为空 |
 
 **何时使用**: 用户要求"全面分析"、"给我投资建议"、"要不要买入"等需要完整决策的场景
+
+**analysts 参数说明**: 控制分析师层的组合，无论选几个分析师，后续的研究员辩论→风险管理→交易员决策都会执行。
+
+| analysts 组合 | 含义 | 预计耗时 |
+|--------------|------|---------|
+| `["market","social","news","fundamentals"]` | 全部4个分析师（默认） | 3-10 分钟 |
+| `["market"]` | 仅技术面+完整决策流程 | 1-3 分钟 |
+| `["market","fundamentals"]` | 技术+基本面+完整决策 | 2-5 分钟 |
+| `["news","fundamentals"]` | 新闻+基本面+完整决策 | 2-5 分钟 |
 
 **调用前**: 告知用户"全流程分析需要 3-10 分钟，请耐心等待"
 
@@ -499,10 +511,12 @@ screen_stocks(
 | 用户话术 | MCP Tool | 关键参数 |
 |---------|----------|---------|
 | 全面分析/投资建议/要不要买 | `trading_agent` | symbol, trade_date |
-| 技术面/走势/K线/均线 | `market_analyst` | symbol, trade_date |
-| 基本面/估值/PE/贵不贵 | `fundamentals_analyst` | symbol, trade_date |
-| 新闻/利好利空/消息 | `news_analyst` | symbol, trade_date |
-| 情绪/大家怎么看/散户 | `social_analyst` | symbol, trade_date |
+| 技术面+决策/只看技术面给建议 | `trading_agent` | analysts=["market"] |
+| 技术+基本面综合决策 | `trading_agent` | analysts=["market","fundamentals"] |
+| 技术面/走势/K线/均线（仅报告） | `market_analyst` | symbol, trade_date |
+| 基本面/估值/PE/贵不贵（仅报告） | `fundamentals_analyst` | symbol, trade_date |
+| 新闻/利好利空/消息（仅报告） | `news_analyst` | symbol, trade_date |
+| 情绪/大家怎么看/散户（仅报告） | `social_analyst` | symbol, trade_date |
 | 几只股票哪个好/对比 | `compare_stocks` | symbols, analyst |
 | 分析一批/帮我看看这些 | `batch_analyze` | symbols, analyst |
 | 这段走势/半年表现 | `period_compare` | symbol, start_date, end_date |
@@ -558,7 +572,9 @@ MCP Server 注册了 6 个 Prompt 模板，MCP 客户端可直接调用：
 
 | 工具 | 预计耗时 | 用户提示 |
 |------|---------|---------|
-| trading_agent | 3-10 分钟 | "全流程分析需要 3-10 分钟，请耐心等待" |
+| trading_agent (4分析师) | 3-10 分钟 | "全流程分析需要 3-10 分钟，请耐心等待" |
+| trading_agent (1分析师) | 1-3 分钟 | "单维度决策分析需要 1-3 分钟" |
+| trading_agent (2分析师) | 2-5 分钟 | "双维度决策分析需要 2-5 分钟" |
 | 单分析师 (market/fundamentals/news/social) | ~30 秒 | "正在分析，大约需要 30 秒" |
 | compare_stocks (3股, market) | ~1 分钟 | "对比分析大约需要 1 分钟" |
 | compare_stocks (3股, full) | 5-15 分钟 | "全流程对比需要 5-15 分钟" |

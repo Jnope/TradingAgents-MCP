@@ -92,7 +92,7 @@ class InternalProvider(BaseStockDataProvider):
         if df.empty:
             logger.warning(f"TransMatrix 无 K 线数据: {symbol}，降级 AKShare")
             return self._fallback_akshare_kline(symbol, start_date, end_date)
-        return self._standardize_kline(df)
+        return self._standardize_kline(df, symbol)
 
     # ==================== 实时行情 ====================
 
@@ -212,11 +212,11 @@ class InternalProvider(BaseStockDataProvider):
 
     # ==================== 内部工具方法 ====================
 
-    def _standardize_kline(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _standardize_kline(self, df: pd.DataFrame, symbol: str) -> pd.DataFrame:
         if df.empty:
             return df
         df = df.copy()
-        df["code"] = df["code"].apply(to_internal_code)
+        df["code"] = to_internal_code(symbol)
         df = df.rename(columns={
             "trade_day": "date",
             "volume": "vol",

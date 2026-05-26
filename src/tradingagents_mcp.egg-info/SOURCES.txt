@@ -100,9 +100,12 @@ src/tradingagents/utils/stock_validator.py
 src/tradingagents/utils/tool_logging.py
 src/tradingagents_mcp/__init__.py
 src/tradingagents_mcp/__main__.py
+src/tradingagents_mcp/analyst_runner.py
 src/tradingagents_mcp/prompts.py
 src/tradingagents_mcp/screen.py
 src/tradingagents_mcp/server.py
+src/tradingagents_mcp/shared_context.py
+src/tradingagents_mcp/trade_calendar.py
 src/tradingagents_mcp/validators.py
 src/tradingagents_mcp.egg-info/PKG-INFO
 src/tradingagents_mcp.egg-info/SOURCES.txt
