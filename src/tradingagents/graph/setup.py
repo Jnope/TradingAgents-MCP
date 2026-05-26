@@ -1,7 +1,9 @@
 # TradingAgents/graph/setup.py
 
 from typing import Dict, Any
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage, ToolMessage
 from langgraph.graph import END, StateGraph, START
 from langgraph.prebuilt import ToolNode
 
@@ -11,9 +13,22 @@ from tradingagents.agents.utils.agent_utils import Toolkit
 
 from .conditional_logic import ConditionalLogic
 
-# 导入统一日志系统
 from tradingagents.utils.logging_init import get_logger
 logger = get_logger("default")
+
+_ANALYST_REPORT_KEY = {
+    "market": "market_report",
+    "fundamentals": "fundamentals_report",
+    "news": "news_report",
+    "social": "sentiment_report",
+}
+
+_ANALYST_TOOL_COUNT_KEY = {
+    "market": "market_tool_call_count",
+    "fundamentals": "fundamentals_tool_call_count",
+    "news": "news_tool_call_count",
+    "social": "sentiment_tool_call_count",
+}
 
 
 class GraphSetup:
@@ -34,7 +49,6 @@ class GraphSetup:
         config: Dict[str, Any] = None,
         react_llm = None,
     ):
-        """Initialize with required components."""
         self.quick_thinking_llm = quick_thinking_llm
         self.deep_thinking_llm = deep_thinking_llm
         self.toolkit = toolkit
@@ -48,47 +62,222 @@ class GraphSetup:
         self.config = config or {}
         self.react_llm = react_llm
 
-    def setup_graph(
-        self, selected_analysts=["market", "social", "news", "fundamentals"]
-    ):
-        """Set up and compile the agent workflow graph.
+    # ------------------------------------------------------------------
+    #  Parallel analysts node
+    # ------------------------------------------------------------------
 
-        Args:
-            selected_analysts (list): List of analyst types to include. Options are:
-                - "market": Market analyst
-                - "social": Social media analyst
-                - "news": News analyst
-                - "fundamentals": Fundamentals analyst
-        """
-        if len(selected_analysts) == 0:
-            raise ValueError("Trading Agents Graph Setup Error: no analysts selected!")
+    def _create_analyst_nodes(self, selected_analysts):
+        analyst_nodes = {}
 
-        # Create analyst nodes
+        if "market" in selected_analysts:
+            analyst_nodes["market"] = create_market_analyst(
+                self.quick_thinking_llm, self.toolkit
+            )
+        if "social" in selected_analysts:
+            analyst_nodes["social"] = create_social_media_analyst(
+                self.quick_thinking_llm, self.toolkit
+            )
+        if "news" in selected_analysts:
+            analyst_nodes["news"] = create_news_analyst(
+                self.quick_thinking_llm, self.toolkit
+            )
+        if "fundamentals" in selected_analysts:
+            analyst_nodes["fundamentals"] = create_fundamentals_analyst(
+                self.quick_thinking_llm, self.toolkit
+            )
+
+        return analyst_nodes
+
+    def _make_parallel_analysts_node(self, selected_analysts):
+        analyst_nodes = self._create_analyst_nodes(selected_analysts)
+
+        analyst_tools_map = {
+            "market": [self.toolkit.get_stock_market_data_unified],
+            "social": [self.toolkit.get_stock_sentiment_unified],
+            "news": [self.toolkit.get_stock_news_unified],
+            "fundamentals": [self.toolkit.get_stock_fundamentals_unified],
+        }
+
+        def _execute_tool_calls(tool_calls, tools):
+            tool_map = {}
+            for t in tools:
+                name = getattr(t, 'name', None) or getattr(t, '__name__', str(t))
+                tool_map[name] = t
+
+            tool_messages = []
+            for tc in tool_calls:
+                tool_name = tc.get('name', '')
+                tool_args = tc.get('args', {})
+                tool_id = tc.get('id', '')
+
+                tool_fn = tool_map.get(tool_name)
+                if tool_fn is None:
+                    tool_messages.append(
+                        ToolMessage(content=f"未找到工具: {tool_name}", tool_call_id=tool_id)
+                    )
+                    continue
+                try:
+                    tool_result = tool_fn.invoke(tool_args)
+                    tool_messages.append(
+                        ToolMessage(content=str(tool_result), tool_call_id=tool_id)
+                    )
+                except Exception as e:
+                    logger.error(f"❌ [并行分析师] 工具 {tool_name} 执行失败: {e}")
+                    tool_messages.append(
+                        ToolMessage(content=f"工具执行失败: {e}", tool_call_id=tool_id)
+                    )
+            return tool_messages
+
+        def _run_analyst_with_tool_loop(analyst_type, node_fn, ticker, trade_date):
+            isolated_state = {
+                "messages": [HumanMessage(content=f"请分析股票 {ticker}")],
+                "company_of_interest": ticker,
+                "trade_date": trade_date,
+                f"{analyst_type}_tool_call_count": 0,
+            }
+
+            report_key = _ANALYST_REPORT_KEY[analyst_type]
+            max_iterations = 4
+
+            for iteration in range(max_iterations):
+                result = node_fn(isolated_state)
+                report = result.get(report_key, "")
+
+                if report and len(report) > 50:
+                    return report
+
+                messages = result.get("messages", [])
+                has_tool_calls = False
+                for msg in messages:
+                    if hasattr(msg, "tool_calls") and msg.tool_calls:
+                        has_tool_calls = True
+                        break
+
+                if not has_tool_calls:
+                    if report:
+                        return report
+                    last_content = ""
+                    for msg in reversed(messages):
+                        if hasattr(msg, "content") and msg.content:
+                            last_content = msg.content
+                            break
+                    if last_content:
+                        return last_content
+                    return f"{analyst_type} 分析未能生成有效报告"
+
+                tools = analyst_tools_map.get(analyst_type, [])
+                if not tools:
+                    logger.warning(
+                        f"⚠️ [并行分析师] {analyst_type} 有tool_calls但无工具列表，"
+                        f"尝试强制生成"
+                    )
+                    isolated_state["messages"].extend(messages)
+                    isolated_state[f"{analyst_type}_tool_call_count"] = 99
+                    force_result = node_fn(isolated_state)
+                    force_report = force_result.get(report_key, "")
+                    if force_report and len(force_report) > 50:
+                        return force_report
+                    for msg in reversed(force_result.get("messages", [])):
+                        if hasattr(msg, "content") and msg.content:
+                            return msg.content
+                    return f"{analyst_type} 分析未能生成有效报告"
+
+                all_tool_calls = []
+                for msg in messages:
+                    if hasattr(msg, "tool_calls") and msg.tool_calls:
+                        all_tool_calls.extend(msg.tool_calls)
+
+                tool_messages = _execute_tool_calls(all_tool_calls, tools)
+
+                isolated_state["messages"].extend(messages)
+                isolated_state["messages"].extend(tool_messages)
+                isolated_state[f"{analyst_type}_tool_call_count"] = (
+                    isolated_state.get(f"{analyst_type}_tool_call_count", 0) + 1
+                )
+
+            logger.warning(
+                f"⚠️ [并行分析师] {analyst_type} 达到最大迭代次数 {max_iterations}"
+            )
+            last_content = ""
+            for msg in reversed(isolated_state.get("messages", [])):
+                if hasattr(msg, "content") and msg.content and not hasattr(msg, "tool_calls"):
+                    last_content = msg.content
+                    break
+            return last_content or f"{analyst_type} 分析超过最大迭代次数"
+
+        def parallel_analysts_node(state):
+            ticker = state["company_of_interest"]
+            trade_date = state["trade_date"]
+            logger.info(
+                f"🚀 [并行分析师] 开始并行执行 {len(analyst_nodes)} 个分析师: "
+                f"{list(analyst_nodes.keys())}"
+            )
+
+            reports = {}
+            errors = {}
+
+            def _run_one(item):
+                analyst_type, node_fn = item
+                try:
+                    report = _run_analyst_with_tool_loop(
+                        analyst_type, node_fn, ticker, trade_date
+                    )
+                    return analyst_type, report, None
+                except Exception as e:
+                    logger.error(
+                        f"❌ [并行分析师] {analyst_type} 执行失败: {e}",
+                        exc_info=True,
+                    )
+                    return analyst_type, f"{analyst_type} 分析失败: {e}", e
+
+            with ThreadPoolExecutor(max_workers=len(analyst_nodes)) as pool:
+                futures = {
+                    pool.submit(_run_one, item): item[0]
+                    for item in analyst_nodes.items()
+                }
+                for future in as_completed(futures):
+                    analyst_type, report, err = future.result()
+                    reports[analyst_type] = report
+                    if err:
+                        errors[analyst_type] = err
+
+            update = {"messages": [HumanMessage(content="Continue")]}
+
+            for analyst_type in selected_analysts:
+                report_key = _ANALYST_REPORT_KEY.get(analyst_type)
+                if report_key:
+                    update[report_key] = reports.get(analyst_type, "")
+                count_key = _ANALYST_TOOL_COUNT_KEY.get(analyst_type)
+                if count_key:
+                    update[count_key] = 1
+
+            if errors:
+                logger.warning(
+                    f"⚠️ [并行分析师] {len(errors)} 个分析师失败: "
+                    f"{list(errors.keys())}"
+                )
+
+            logger.info(
+                f"✅ [并行分析师] 全部完成，报告长度: "
+                + ", ".join(
+                    f"{k}={len(v)}字" for k, v in reports.items()
+                )
+            )
+
+            return update
+
+        return parallel_analysts_node
+
+    # ------------------------------------------------------------------
+    #  Serial (original) graph
+    # ------------------------------------------------------------------
+
+    def _build_serial_graph(self, selected_analysts, workflow):
         analyst_nodes = {}
         delete_nodes = {}
         tool_nodes = {}
 
         if "market" in selected_analysts:
-            # 现在所有LLM都使用标准市场分析师（包括阿里百炼的OpenAI兼容适配器）
-            llm_provider = self.config.get("llm_provider", "").lower()
-
-            # 检查是否使用OpenAI兼容的阿里百炼适配器
-            using_dashscope_openai = (
-                "dashscope" in llm_provider and
-                hasattr(self.quick_thinking_llm, '__class__') and
-                'OpenAI' in self.quick_thinking_llm.__class__.__name__
-            )
-
-            if using_dashscope_openai:
-                logger.debug(f"📈 [DEBUG] 使用标准市场分析师（阿里百炼OpenAI兼容模式）")
-            elif "dashscope" in llm_provider or "阿里百炼" in self.config.get("llm_provider", ""):
-                logger.debug(f"📈 [DEBUG] 使用标准市场分析师（阿里百炼原生模式）")
-            elif "deepseek" in llm_provider:
-                logger.debug(f"📈 [DEBUG] 使用标准市场分析师（DeepSeek）")
-            else:
-                logger.debug(f"📈 [DEBUG] 使用标准市场分析师")
-
-            # 所有LLM都使用标准分析师
             analyst_nodes["market"] = create_market_analyst(
                 self.quick_thinking_llm, self.toolkit
             )
@@ -110,33 +299,55 @@ class GraphSetup:
             tool_nodes["news"] = self.tool_nodes["news"]
 
         if "fundamentals" in selected_analysts:
-            # 现在所有LLM都使用标准基本面分析师（包括阿里百炼的OpenAI兼容适配器）
-            llm_provider = self.config.get("llm_provider", "").lower()
-
-            # 检查是否使用OpenAI兼容的阿里百炼适配器
-            using_dashscope_openai = (
-                "dashscope" in llm_provider and
-                hasattr(self.quick_thinking_llm, '__class__') and
-                'OpenAI' in self.quick_thinking_llm.__class__.__name__
-            )
-
-            if using_dashscope_openai:
-                logger.debug(f"📊 [DEBUG] 使用标准基本面分析师（阿里百炼OpenAI兼容模式）")
-            elif "dashscope" in llm_provider or "阿里百炼" in self.config.get("llm_provider", ""):
-                logger.debug(f"📊 [DEBUG] 使用标准基本面分析师（阿里百炼原生模式）")
-            elif "deepseek" in llm_provider:
-                logger.debug(f"📊 [DEBUG] 使用标准基本面分析师（DeepSeek）")
-            else:
-                logger.debug(f"📊 [DEBUG] 使用标准基本面分析师")
-
-            # 所有LLM都使用标准分析师（包含强制工具调用机制）
             analyst_nodes["fundamentals"] = create_fundamentals_analyst(
                 self.quick_thinking_llm, self.toolkit
             )
             delete_nodes["fundamentals"] = create_msg_delete()
             tool_nodes["fundamentals"] = self.tool_nodes["fundamentals"]
 
-        # Create researcher and manager nodes
+        for analyst_type, node in analyst_nodes.items():
+            workflow.add_node(f"{analyst_type.capitalize()} Analyst", node)
+            workflow.add_node(
+                f"Msg Clear {analyst_type.capitalize()}", delete_nodes[analyst_type]
+            )
+            workflow.add_node(f"tools_{analyst_type}", tool_nodes[analyst_type])
+
+        first_analyst = selected_analysts[0]
+        workflow.add_edge(START, f"{first_analyst.capitalize()} Analyst")
+
+        for i, analyst_type in enumerate(selected_analysts):
+            current_analyst = f"{analyst_type.capitalize()} Analyst"
+            current_tools = f"tools_{analyst_type}"
+            current_clear = f"Msg Clear {analyst_type.capitalize()}"
+
+            workflow.add_conditional_edges(
+                current_analyst,
+                getattr(self.conditional_logic, f"should_continue_{analyst_type}"),
+                [current_tools, current_clear],
+            )
+            workflow.add_edge(current_tools, current_analyst)
+
+            if i < len(selected_analysts) - 1:
+                next_analyst = f"{selected_analysts[i+1].capitalize()} Analyst"
+                workflow.add_edge(current_clear, next_analyst)
+            else:
+                workflow.add_edge(current_clear, "Bull Researcher")
+
+    # ------------------------------------------------------------------
+    #  Parallel graph
+    # ------------------------------------------------------------------
+
+    def _build_parallel_graph(self, selected_analysts, workflow):
+        parallel_node = self._make_parallel_analysts_node(selected_analysts)
+        workflow.add_node("Parallel Analysts", parallel_node)
+        workflow.add_edge(START, "Parallel Analysts")
+        workflow.add_edge("Parallel Analysts", "Bull Researcher")
+
+    # ------------------------------------------------------------------
+    #  Common post-analyst nodes & edges
+    # ------------------------------------------------------------------
+
+    def _add_common_nodes(self, workflow):
         bull_researcher_node = create_bull_researcher(
             self.quick_thinking_llm, self.bull_memory
         )
@@ -148,7 +359,6 @@ class GraphSetup:
         )
         trader_node = create_trader(self.quick_thinking_llm, self.trader_memory)
 
-        # Create risk analysis nodes
         risky_analyst = create_risky_debator(self.quick_thinking_llm)
         neutral_analyst = create_neutral_debator(self.quick_thinking_llm)
         safe_analyst = create_safe_debator(self.quick_thinking_llm)
@@ -156,18 +366,6 @@ class GraphSetup:
             self.deep_thinking_llm, self.risk_manager_memory
         )
 
-        # Create workflow
-        workflow = StateGraph(AgentState)
-
-        # Add analyst nodes to the graph
-        for analyst_type, node in analyst_nodes.items():
-            workflow.add_node(f"{analyst_type.capitalize()} Analyst", node)
-            workflow.add_node(
-                f"Msg Clear {analyst_type.capitalize()}", delete_nodes[analyst_type]
-            )
-            workflow.add_node(f"tools_{analyst_type}", tool_nodes[analyst_type])
-
-        # Add other nodes
         workflow.add_node("Bull Researcher", bull_researcher_node)
         workflow.add_node("Bear Researcher", bear_researcher_node)
         workflow.add_node("Research Manager", research_manager_node)
@@ -177,33 +375,6 @@ class GraphSetup:
         workflow.add_node("Safe Analyst", safe_analyst)
         workflow.add_node("Risk Judge", risk_manager_node)
 
-        # Define edges
-        # Start with the first analyst
-        first_analyst = selected_analysts[0]
-        workflow.add_edge(START, f"{first_analyst.capitalize()} Analyst")
-
-        # Connect analysts in sequence
-        for i, analyst_type in enumerate(selected_analysts):
-            current_analyst = f"{analyst_type.capitalize()} Analyst"
-            current_tools = f"tools_{analyst_type}"
-            current_clear = f"Msg Clear {analyst_type.capitalize()}"
-
-            # Add conditional edges for current analyst
-            workflow.add_conditional_edges(
-                current_analyst,
-                getattr(self.conditional_logic, f"should_continue_{analyst_type}"),
-                [current_tools, current_clear],
-            )
-            workflow.add_edge(current_tools, current_analyst)
-
-            # Connect to next analyst or to Bull Researcher if this is the last analyst
-            if i < len(selected_analysts) - 1:
-                next_analyst = f"{selected_analysts[i+1].capitalize()} Analyst"
-                workflow.add_edge(current_clear, next_analyst)
-            else:
-                workflow.add_edge(current_clear, "Bull Researcher")
-
-        # Add remaining edges
         workflow.add_conditional_edges(
             "Bull Researcher",
             self.conditional_logic.should_continue_debate,
@@ -246,8 +417,35 @@ class GraphSetup:
                 "Risk Judge": "Risk Judge",
             },
         )
-
         workflow.add_edge("Risk Judge", END)
 
-        # Compile and return
+    # ------------------------------------------------------------------
+    #  Public entry point
+    # ------------------------------------------------------------------
+
+    def setup_graph(
+        self,
+        selected_analysts=["market", "social", "news", "fundamentals"],
+        parallel=True,
+    ):
+        """Set up and compile the agent workflow graph.
+
+        Args:
+            selected_analysts (list): List of analyst types to include.
+            parallel (bool): If True, run all analysts in parallel using
+                ThreadPoolExecutor. If False, run sequentially (original
+                behaviour).
+        """
+        if len(selected_analysts) == 0:
+            raise ValueError("Trading Agents Graph Setup Error: no analysts selected!")
+
+        workflow = StateGraph(AgentState)
+
+        if parallel and len(selected_analysts) > 1:
+            self._build_parallel_graph(selected_analysts, workflow)
+        else:
+            self._build_serial_graph(selected_analysts, workflow)
+
+        self._add_common_nodes(workflow)
+
         return workflow.compile()

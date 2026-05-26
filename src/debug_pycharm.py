@@ -39,6 +39,7 @@ toolkit = Toolkit(config=config)
 symbol = "688031"
 trade_date = "2025-05-20"
 
+"""
 # 2a. 行情数据
 market_data = toolkit.get_stock_market_data_unified.invoke({
     "ticker": symbol,
@@ -57,6 +58,7 @@ print(f"基本面数据长度: {len(str(fundamentals_data)) if fundamentals_data
 from tradingagents.dataflows.interface import get_china_stock_info_unified
 stock_info = get_china_stock_info_unified(symbol)
 print(f"股票信息: {stock_info[:200] if stock_info else '无'}")
+"""
 
 # ============================================================
 # 第3步: 测试单分析师（需要LLM）

@@ -51,9 +51,11 @@ class SharedContext:
         """
         from tradingagents.graph.trading_graph import TradingAgentsGraph
 
-        key = tuple(sorted(analysts))
+        cfg = config or self.config
+        parallel = cfg.get("parallel_analysts", True)
+
+        key = (tuple(sorted(analysts)), parallel)
         if key not in self._graph_cache:
-            cfg = config or self.config
             self._graph_cache[key] = TradingAgentsGraph(
                 selected_analysts=analysts,
                 debug=False,
@@ -61,8 +63,9 @@ class SharedContext:
                 _deep_llm=self.deep_thinking_llm,
                 _quick_llm=self.quick_thinking_llm,
                 _toolkit=self.toolkit,
+                parallel_analysts=parallel,
             )
-            logger.info("SharedContext: 创建并缓存 Graph(analysts=%s)", analysts)
+            logger.info("SharedContext: 创建并缓存 Graph(analysts=%s, parallel=%s)", analysts, parallel)
         else:
             logger.info("SharedContext: 复用已缓存 Graph(analysts=%s)", analysts)
             cached = self._graph_cache[key]

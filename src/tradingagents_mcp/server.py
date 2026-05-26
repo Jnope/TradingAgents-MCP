@@ -111,6 +111,7 @@ async def trading_agent(
     analysts: Optional[list[str]] = None,
     max_debate_rounds: int = 1,
     max_risk_discuss_rounds: int = 1,
+    parallel_analysts: Optional[bool] = None,
     ctx: Context[ServerSession, None] = None,
 ) -> dict:
     """AI金融交易分析Agent（完整流程）：执行多Agent协作分析，
@@ -124,6 +125,7 @@ Args:
     analysts: 分析师组合，默认 ["market","social","news","fundamentals"]
     max_debate_rounds: 多空辩论轮次
     max_risk_discuss_rounds: 风险辩论轮次
+    parallel_analysts: 分析师是否并行执行，默认读取 MCP_PARALLEL_ANALYSTS 环境变量，未设置则并行
 """
     t0 = time.time()
     if analysts is None:
@@ -146,6 +148,8 @@ Args:
         config["max_risk_discuss_rounds"] = max_risk_discuss_rounds
         config["online_tools"] = config.get("online_tools", True)
         config["online_news"] = config.get("online_news", True)
+        if parallel_analysts is not None:
+            config["parallel_analysts"] = parallel_analysts
 
         ta = shared.get_graph(analysts, config=config)
 
@@ -326,6 +330,7 @@ async def compare_stocks(
     analyst: str = "market",
     max_debate_rounds: int = 1,
     max_risk_discuss_rounds: int = 1,
+    parallel_analysts: Optional[bool] = None,
     ctx: Context[ServerSession, None] = None,
 ) -> dict:
     """多股对比分析Agent：对多只股票并行分析并生成对比报告。
@@ -338,6 +343,7 @@ Args:
     analyst: 对比维度 "market"|"fundamentals"|"news"|"social"|"full"
     max_debate_rounds: 仅 full 模式
     max_risk_discuss_rounds: 仅 full 模式
+    parallel_analysts: 分析师是否并行执行，默认读取 MCP_PARALLEL_ANALYSTS 环境变量，未设置则并行
 """
     t0 = time.time()
 
@@ -366,6 +372,8 @@ Args:
             config = build_config()
             config["max_debate_rounds"] = max_debate_rounds
             config["max_risk_discuss_rounds"] = max_risk_discuss_rounds
+            if parallel_analysts is not None:
+                config["parallel_analysts"] = parallel_analysts
 
             async def _run_full(sym):
                 ta = shared.get_graph(

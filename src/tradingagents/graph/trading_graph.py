@@ -266,6 +266,7 @@ class TradingAgentsGraph:
         _deep_llm=None,
         _quick_llm=None,
         _toolkit=None,
+        parallel_analysts=True,
     ):
         """Initialize the trading agents graph and components.
 
@@ -276,9 +277,12 @@ class TradingAgentsGraph:
             _deep_llm: Injected deep thinking LLM instance (skip internal creation)
             _quick_llm: Injected quick thinking LLM instance (skip internal creation)
             _toolkit: Injected Toolkit instance (skip internal creation)
+            parallel_analysts: If True, run all analysts in parallel (default).
+                If False, run sequentially (original behaviour).
         """
         self.debug = debug
         self.config = config or DEFAULT_CONFIG
+        self.parallel_analysts = parallel_analysts
 
         _injected = _deep_llm is not None and _quick_llm is not None and _toolkit is not None
 
@@ -358,7 +362,7 @@ class TradingAgentsGraph:
         self.ticker = None
         self.log_states_dict = {}
 
-        self.graph = self.graph_setup.setup_graph(selected_analysts)
+        self.graph = self.graph_setup.setup_graph(selected_analysts, parallel=self.parallel_analysts)
 
     def _create_tool_nodes(self) -> Dict[str, ToolNode]:
         """Create tool nodes for different data sources.

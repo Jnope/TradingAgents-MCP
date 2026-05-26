@@ -6,6 +6,7 @@
 
 import os
 import time
+import threading
 from typing import Dict, List, Optional, Any
 from enum import Enum
 import warnings
@@ -1802,9 +1803,13 @@ def get_china_stock_data_unified(symbol: str, start_date: str, end_date: str) ->
     return result
 
 
+_stock_info_dict_cache: Dict[str, Dict] = {}
+_stock_info_dict_lock = threading.Lock()
+
+
 def get_china_stock_info_unified(symbol: str) -> Dict:
     """
-    统一的中国股票信息获取接口
+    统一的中国股票信息获取接口（带缓存）
 
     Args:
         symbol: 股票代码
@@ -1812,8 +1817,14 @@ def get_china_stock_info_unified(symbol: str) -> Dict:
     Returns:
         Dict: 股票基本信息
     """
+    if symbol in _stock_info_dict_cache:
+        return _stock_info_dict_cache[symbol]
+
     manager = get_data_source_manager()
-    return manager.get_stock_info(symbol)
+    result = manager.get_stock_info(symbol)
+    with _stock_info_dict_lock:
+        _stock_info_dict_cache[symbol] = result
+    return result
 
 
 # ==================== 美股数据源管理器 ====================

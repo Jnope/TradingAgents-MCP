@@ -8,6 +8,7 @@ TransMatrix 内部数据库 SQL 查询封装
 import os
 import logging
 import re
+import threading
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -27,47 +28,53 @@ def _date_end(date_str: str) -> str:
     return f"{dt.strftime('%Y-%m-%d')} 00:00:00"
 
 _db_conn = None
+_db_init_lock = threading.Lock()
+_db_query_lock = threading.Lock()
 
 
 def _get_db_conn():
-    """获取/创建 DatabaseConn 单例"""
+    """获取/创建 DatabaseConn 单例（线程安全）"""
     global _db_conn
     if _db_conn is not None:
         return _db_conn
 
-    try:
-        from transwarp.timelyre.timelyre_public import DatabaseConn
-    except ImportError:
-        raise ImportError(
-            "transwarp-timelyre 未安装，无法连接内部数据库。"
-            "请联系管理员安装或切换到其他数据源。"
-        )
+    with _db_init_lock:
+        if _db_conn is not None:
+            return _db_conn
 
-    jdbc_http_proxy = os.environ.get("JDBC_HTTP_PROXY", "172.18.192.74:9998")
-    real_conn = os.environ.get(
-        "TM_REAL_CONN", "jdbc:hive2://172.18.192.75:10006"
-    )
-    db_name = os.environ.get("TM_DB_NAME", "meta_data")
-    db_user = os.environ.get("TM_DB_USER", "admin")
-    password = os.environ.get("TM_DB_PASSWORD", "admin")
-    token = os.environ.get("GUARDIAN_TOKEN", "UgJRRGe7qMAKcirOQ017-TDH")
+        try:
+            from transwarp.timelyre.timelyre_public import DatabaseConn
+        except ImportError:
+            raise ImportError(
+                "transwarp-timelyre 未安装，无法连接内部数据库。"
+                "请联系管理员安装或切换到其他数据源。"
+            )
 
-    try:
-        _db_conn = DatabaseConn(
-            jdbc_http_proxy=jdbc_http_proxy,
-            real_conn=real_conn,
-            db=db_name,
-            auth_type="ldap",
-            username=db_user,
-            password=password,
-            token=token,
-            disable_cancel=True,
+        jdbc_http_proxy = os.environ.get("JDBC_HTTP_PROXY", "172.18.192.74:9998")
+        real_conn = os.environ.get(
+            "TM_REAL_CONN", "jdbc:hive2://172.18.192.75:10006"
         )
-        logger.info("TransMatrix DatabaseConn 初始化成功")
-        return _db_conn
-    except Exception as e:
-        logger.error(f"DatabaseConn初始化失败: {e}")
-        raise e
+        db_name = os.environ.get("TM_DB_NAME", "meta_data")
+        db_user = os.environ.get("TM_DB_USER", "admin")
+        password = os.environ.get("TM_DB_PASSWORD", "admin")
+        token = os.environ.get("GUARDIAN_TOKEN", "UgJRRGe7qMAKcirOQ017-TDH")
+
+        try:
+            _db_conn = DatabaseConn(
+                jdbc_http_proxy=jdbc_http_proxy,
+                real_conn=real_conn,
+                db=db_name,
+                auth_type="ldap",
+                username=db_user,
+                password=password,
+                token=token,
+                disable_cancel=True,
+            )
+            logger.info("TransMatrix DatabaseConn 初始化成功")
+            return _db_conn
+        except Exception as e:
+            logger.error(f"DatabaseConn初始化失败: {e}")
+            raise e
 
 
 
@@ -76,11 +83,14 @@ def _extract_table_name(sql: str) -> str:
     return m.group(1) if m else ""
 
 
+_QUERY_TIMEOUT = 60
+
 def query(sql: str, table: str = "") -> pd.DataFrame:
     """
     执行 SQL 查询并返回 DataFrame
 
     使用 DatabaseConn.query_as_df() 方法，第一个参数为表名，query 参数为完整 SQL。
+    加锁防止并发请求导致 JDBC HTTP Proxy 返回 500。
 
     Args:
         sql: SQL 查询语句
@@ -91,6 +101,10 @@ def query(sql: str, table: str = "") -> pd.DataFrame:
     """
     conn = _get_db_conn()
     table_name = table or _extract_table_name(sql)
+    acquired = _db_query_lock.acquire(timeout=_QUERY_TIMEOUT)
+    if not acquired:
+        logger.error(f"TransMatrix SQL 查询获取锁超时({_QUERY_TIMEOUT}s): {sql[:100]}")
+        return pd.DataFrame()
     try:
         result = conn.query_as_df(table_name, query=sql, combine_ignore_index=True)
         if result is None:
@@ -101,9 +115,15 @@ def query(sql: str, table: str = "") -> pd.DataFrame:
     except Exception as e:
         logger.error(f"TransMatrix SQL 查询失败: {e}\nSQL: {sql[:200]}")
         raise e
+    finally:
+        _db_query_lock.release()
 
 
 def health_check() -> bool:
+    acquired = _db_query_lock.acquire(timeout=10)
+    if not acquired:
+        logger.warning("TransMatrix DB 健康检查获取锁超时")
+        return False
     try:
         conn = _get_db_conn()
         conn.show_databases()
@@ -111,6 +131,8 @@ def health_check() -> bool:
     except Exception as e:
         logger.warning(f"TransMatrix DB 健康检查失败: {e}")
         return False
+    finally:
+        _db_query_lock.release()
 
 
 # ==================== 股票基本信息 ====================

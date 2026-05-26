@@ -1,7 +1,5 @@
 from typing import Annotated, Dict
-import time
-import os
-from datetime import datetime
+import threading
 
 # 导入新闻模块（支持新旧路径）
 try:
@@ -11,8 +9,6 @@ except ImportError:
 
 from .news.google_news import *
 
-
-from .news.chinese_finance import get_chinese_social_sentiment
 
 # 导入 Finnhub 工具（支持新旧路径）
 
@@ -1501,12 +1497,17 @@ def get_china_stock_data_unified(
         return f"❌ 获取{ticker}股票数据失败: {e}"
 
 
+_stock_info_cache: Dict[str, str] = {}
+_stock_info_lock = threading.Lock()
+
+
 def get_china_stock_info_unified(
     ticker: Annotated[str, "中国股票代码，如：000001、600036等"]
 ) -> str:
     """
     统一的中国A股基本信息获取接口
     自动使用配置的数据源（默认Tushare）
+    带线程安全缓存，同一股票代码只查询一次
 
     Args:
         ticker: 股票代码
@@ -1514,12 +1515,17 @@ def get_china_stock_info_unified(
     Returns:
         str: 股票基本信息
     """
+
+    if ticker in _stock_info_cache:
+        logger.info(f"📊 [统一接口] 命中缓存: {ticker}")
+        return _stock_info_cache[ticker]
+
     try:
-        from .data_source_manager import get_china_stock_info_unified
+        from .data_source_manager import get_china_stock_info_unified as _get_info
 
         logger.info(f"📊 [统一接口] 获取{ticker}基本信息...")
 
-        info = get_china_stock_info_unified(ticker)
+        info = _get_info(ticker)
 
         if info and info.get('name'):
             result = f"股票代码: {ticker}\n"
@@ -1528,7 +1534,6 @@ def get_china_stock_info_unified(
             result += f"所属行业: {info.get('industry', '未知')}\n"
             result += f"上市市场: {info.get('market', '未知')}\n"
             result += f"上市日期: {info.get('list_date', '未知')}\n"
-            # 附加快照行情（若存在）
             cp = info.get('current_price')
             pct = info.get('change_pct')
             vol = info.get('volume')
@@ -1544,13 +1549,21 @@ def get_china_stock_info_unified(
                 result += f"成交量: {vol}\n"
             result += f"数据来源: {info.get('source', 'unknown')}\n"
 
+            with _stock_info_lock:
+                _stock_info_cache[ticker] = result
             return result
         else:
-            return f"❌ 未能获取{ticker}的基本信息"
+            result = f"❌ 未能获取{ticker}的基本信息"
+            with _stock_info_lock:
+                _stock_info_cache[ticker] = result
+            return result
 
     except Exception as e:
         logger.error(f"❌ [统一接口] 获取股票信息失败: {e}")
-        return f"❌ 获取{ticker}股票信息失败: {e}"
+        result = f"❌ 获取{ticker}股票信息失败: {e}"
+        with _stock_info_lock:
+            _stock_info_cache[ticker] = result
+        return result
 
 
 def switch_china_data_source(

@@ -185,6 +185,7 @@ def build_config() -> dict:
         "MCP_DEEP_BACKEND_URL": ("deep_backend_url", str),
         "MCP_QUICK_API_KEY": ("quick_api_key", str),
         "MCP_DEEP_API_KEY": ("deep_api_key", str),
+        "MCP_PARALLEL_ANALYSTS": ("parallel_analysts", lambda v: v.lower() == "true"),
     }
     for env_key, (config_key, type_fn) in env_map.items():
         val = os.getenv(env_key)
