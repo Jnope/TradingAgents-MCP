@@ -4,3 +4,5 @@ src/tradingagents/dataflows/cache/data_cache/
 .venv/
 build/
 eval_results/
+dist/
+*.whl

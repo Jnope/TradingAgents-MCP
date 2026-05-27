@@ -1520,50 +1520,52 @@ def get_china_stock_info_unified(
         logger.info(f"📊 [统一接口] 命中缓存: {ticker}")
         return _stock_info_cache[ticker]
 
-    try:
-        from .data_source_manager import get_china_stock_info_unified as _get_info
+    with _stock_info_lock:
+        if ticker in _stock_info_cache:
+            logger.info(f"📊 [统一接口] 命中缓存(加锁后): {ticker}")
+            return _stock_info_cache[ticker]
 
-        logger.info(f"📊 [统一接口] 获取{ticker}基本信息...")
+        try:
+            from .data_source_manager import get_china_stock_info_unified as _get_info
 
-        info = _get_info(ticker)
+            logger.info(f"📊 [统一接口] 获取{ticker}基本信息...")
 
-        if info and info.get('name'):
-            result = f"股票代码: {ticker}\n"
-            result += f"股票名称: {info.get('name', '未知')}\n"
-            result += f"所属地区: {info.get('area', '未知')}\n"
-            result += f"所属行业: {info.get('industry', '未知')}\n"
-            result += f"上市市场: {info.get('market', '未知')}\n"
-            result += f"上市日期: {info.get('list_date', '未知')}\n"
-            cp = info.get('current_price')
-            pct = info.get('change_pct')
-            vol = info.get('volume')
-            if cp is not None:
-                result += f"当前价格: {cp}\n"
-            if pct is not None:
-                try:
-                    pct_str = f"{float(pct):+.2f}%"
-                except Exception:
-                    pct_str = str(pct)
-                result += f"涨跌幅: {pct_str}\n"
-            if vol is not None:
-                result += f"成交量: {vol}\n"
-            result += f"数据来源: {info.get('source', 'unknown')}\n"
+            info = _get_info(ticker)
 
-            with _stock_info_lock:
+            if info and info.get('name'):
+                result = f"股票代码: {ticker}\n"
+                result += f"股票名称: {info.get('name', '未知')}\n"
+                result += f"所属地区: {info.get('area', '未知')}\n"
+                result += f"所属行业: {info.get('industry', '未知')}\n"
+                result += f"上市市场: {info.get('market', '未知')}\n"
+                result += f"上市日期: {info.get('list_date', '未知')}\n"
+                cp = info.get('current_price')
+                pct = info.get('change_pct')
+                vol = info.get('volume')
+                if cp is not None:
+                    result += f"当前价格: {cp}\n"
+                if pct is not None:
+                    try:
+                        pct_str = f"{float(pct):+.2f}%"
+                    except Exception:
+                        pct_str = str(pct)
+                    result += f"涨跌幅: {pct_str}\n"
+                if vol is not None:
+                    result += f"成交量: {vol}\n"
+                result += f"数据来源: {info.get('source', 'unknown')}\n"
+
                 _stock_info_cache[ticker] = result
-            return result
-        else:
-            result = f"❌ 未能获取{ticker}的基本信息"
-            with _stock_info_lock:
+                return result
+            else:
+                result = f"❌ 未能获取{ticker}的基本信息"
                 _stock_info_cache[ticker] = result
-            return result
+                return result
 
-    except Exception as e:
-        logger.error(f"❌ [统一接口] 获取股票信息失败: {e}")
-        result = f"❌ 获取{ticker}股票信息失败: {e}"
-        with _stock_info_lock:
+        except Exception as e:
+            logger.error(f"❌ [统一接口] 获取股票信息失败: {e}")
+            result = f"❌ 获取{ticker}股票信息失败: {e}"
             _stock_info_cache[ticker] = result
-        return result
+            return result
 
 
 def switch_china_data_source(

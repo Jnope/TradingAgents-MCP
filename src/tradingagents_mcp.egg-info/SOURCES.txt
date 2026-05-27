@@ -3,7 +3,6 @@ pyproject.toml
 src/tradingagents/__init__.py
 src/tradingagents/default_config.py
 src/tradingagents/agents/__init__.py
-src/tradingagents/agents/analysts/china_market_analyst.py
 src/tradingagents/agents/analysts/fundamentals_analyst.py
 src/tradingagents/agents/analysts/market_analyst.py
 src/tradingagents/agents/analysts/news_analyst.py

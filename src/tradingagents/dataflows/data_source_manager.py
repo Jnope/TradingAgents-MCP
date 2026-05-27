@@ -1761,13 +1761,20 @@ class DataSourceManager(BaseDataSourceManager):
 
 # 全局数据源管理器实例
 _data_source_manager = None
+_dsm_lock = threading.Lock()
+
 
 def get_data_source_manager() -> DataSourceManager:
-    """获取全局数据源管理器实例"""
+    """获取全局数据源管理器实例（线程安全单例）"""
     global _data_source_manager
-    if _data_source_manager is None:
+    if _data_source_manager is not None:
+        return _data_source_manager
+
+    with _dsm_lock:
+        if _data_source_manager is not None:
+            return _data_source_manager
         _data_source_manager = DataSourceManager()
-    return _data_source_manager
+        return _data_source_manager
 
 
 def get_china_stock_data_unified(symbol: str, start_date: str, end_date: str) -> str:
@@ -1809,7 +1816,7 @@ _stock_info_dict_lock = threading.Lock()
 
 def get_china_stock_info_unified(symbol: str) -> Dict:
     """
-    统一的中国股票信息获取接口（带缓存）
+    统一的中国股票信息获取接口（带缓存，线程安全双检锁）
 
     Args:
         symbol: 股票代码
@@ -1820,11 +1827,14 @@ def get_china_stock_info_unified(symbol: str) -> Dict:
     if symbol in _stock_info_dict_cache:
         return _stock_info_dict_cache[symbol]
 
-    manager = get_data_source_manager()
-    result = manager.get_stock_info(symbol)
     with _stock_info_dict_lock:
+        if symbol in _stock_info_dict_cache:
+            return _stock_info_dict_cache[symbol]
+
+        manager = get_data_source_manager()
+        result = manager.get_stock_info(symbol)
         _stock_info_dict_cache[symbol] = result
-    return result
+        return result
 
 
 # ==================== 美股数据源管理器 ====================
