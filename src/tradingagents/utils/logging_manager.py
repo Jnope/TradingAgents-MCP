@@ -79,14 +79,15 @@ class TradingAgentsLogger:
     
     def _load_default_config(self) -> Dict[str, Any]:
         """加载默认日志配置"""
-        # 尝试从配置文件加载
         config = self._load_config_file()
         if config:
             return config
 
-        # 从环境变量获取配置
         log_level = os.getenv('TRADINGAGENTS_LOG_LEVEL', 'INFO').upper()
-        log_dir = os.getenv('TRADINGAGENTS_LOG_DIR', './logs')
+        log_dir = os.getenv(
+            'TRADINGAGENTS_LOG_DIR',
+            str(Path.home() / '.local' / 'share' / 'opencode' / 'log' / 'tradingagents-mcp'),
+        )
 
         return {
             'level': log_level,
@@ -110,14 +111,14 @@ class TradingAgentsLogger:
                 },
                 'error': {
                     'enabled': True,
-                    'level': 'WARNING',  # 只记录WARNING及以上级别
+                    'level': 'WARNING',
                     'max_size': '10MB',
                     'backup_count': 5,
                     'directory': log_dir,
                     'filename': 'error.log'
                 },
                 'structured': {
-                    'enabled': False,  # 默认关闭，可通过环境变量启用
+                    'enabled': False,
                     'level': 'INFO',
                     'directory': log_dir
                 }
@@ -125,14 +126,14 @@ class TradingAgentsLogger:
             'loggers': {
                 'tradingagents': {'level': log_level},
                 'web': {'level': log_level},
-                'streamlit': {'level': 'WARNING'},  # Streamlit日志较多，设为WARNING
-                'urllib3': {'level': 'WARNING'},    # HTTP请求日志较多
+                'streamlit': {'level': 'WARNING'},
+                'urllib3': {'level': 'WARNING'},
                 'requests': {'level': 'WARNING'},
                 'matplotlib': {'level': 'WARNING'}
             },
             'docker': {
                 'enabled': os.getenv('DOCKER_CONTAINER', 'false').lower() == 'true',
-                'stdout_only': True  # Docker环境只输出到stdout
+                'stdout_only': True
             }
         }
 
@@ -213,17 +214,19 @@ class TradingAgentsLogger:
         """添加控制台处理器"""
         if not self.config['handlers']['console']['enabled']:
             return
-            
-        console_handler = logging.StreamHandler(sys.stdout)
+
+        stream_config = self.config['handlers']['console'].get('stream', 'stdout')
+        stream = sys.stdout if stream_config == 'stdout' else sys.stderr
+
+        console_handler = logging.StreamHandler(stream)
         console_level = getattr(logging, self.config['handlers']['console']['level'])
         console_handler.setLevel(console_level)
-        
-        # 选择格式化器
-        if self.config['handlers']['console']['colored'] and sys.stdout.isatty():
+
+        if self.config['handlers']['console'].get('colored', False) and stream.isatty():
             formatter = ColoredFormatter(self.config['format']['console'])
         else:
             formatter = logging.Formatter(self.config['format']['console'])
-        
+
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
     
@@ -235,13 +238,12 @@ class TradingAgentsLogger:
         log_dir = Path(self.config['handlers']['file']['directory'])
         log_file = log_dir / 'tradingagents.log'
 
-        # 使用RotatingFileHandler进行日志轮转
-        max_size = self._parse_size(self.config['handlers']['file']['max_size'])
-        backup_count = self.config['handlers']['file']['backup_count']
+        backup_count = self.config['handlers']['file'].get('backup_count', 7)
 
-        file_handler = logging.handlers.RotatingFileHandler(
+        file_handler = logging.handlers.TimedRotatingFileHandler(
             log_file,
-            maxBytes=max_size,
+            when='midnight',
+            interval=1,
             backupCount=backup_count,
             encoding='utf-8'
         )
@@ -255,7 +257,6 @@ class TradingAgentsLogger:
 
     def _add_error_handler(self, logger: logging.Logger):
         """添加错误日志处理器（只记录WARNING及以上级别）"""
-        # 检查错误处理器是否启用
         error_config = self.config['handlers'].get('error', {})
         if not error_config.get('enabled', True):
             return
@@ -263,18 +264,16 @@ class TradingAgentsLogger:
         log_dir = Path(error_config.get('directory', self.config['handlers']['file']['directory']))
         error_log_file = log_dir / error_config.get('filename', 'error.log')
 
-        # 使用RotatingFileHandler进行日志轮转
-        max_size = self._parse_size(error_config.get('max_size', '10MB'))
-        backup_count = error_config.get('backup_count', 5)
+        backup_count = error_config.get('backup_count', 7)
 
-        error_handler = logging.handlers.RotatingFileHandler(
+        error_handler = logging.handlers.TimedRotatingFileHandler(
             error_log_file,
-            maxBytes=max_size,
+            when='midnight',
+            interval=1,
             backupCount=backup_count,
             encoding='utf-8'
         )
 
-        # 🔧 只记录WARNING及以上级别（WARNING, ERROR, CRITICAL）
         error_level = getattr(logging, error_config.get('level', 'WARNING'))
         error_handler.setLevel(error_level)
 
@@ -286,17 +285,20 @@ class TradingAgentsLogger:
         """添加结构化日志处理器"""
         log_dir = Path(self.config['handlers']['structured']['directory'])
         log_file = log_dir / 'tradingagents_structured.log'
-        
-        structured_handler = logging.handlers.RotatingFileHandler(
+
+        backup_count = self.config['handlers']['structured'].get('backup_count', 7)
+
+        structured_handler = logging.handlers.TimedRotatingFileHandler(
             log_file,
-            maxBytes=self._parse_size('10MB'),
-            backupCount=3,
+            when='midnight',
+            interval=1,
+            backupCount=backup_count,
             encoding='utf-8'
         )
-        
+
         structured_level = getattr(logging, self.config['handlers']['structured']['level'])
         structured_handler.setLevel(structured_level)
-        
+
         formatter = StructuredFormatter()
         structured_handler.setFormatter(formatter)
         logger.addHandler(structured_handler)

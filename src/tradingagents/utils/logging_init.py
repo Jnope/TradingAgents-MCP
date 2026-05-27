@@ -103,7 +103,7 @@ def log_startup_info():
     env_info = {
         'DOCKER_CONTAINER': os.getenv('DOCKER_CONTAINER', 'false'),
         'TRADINGAGENTS_LOG_LEVEL': os.getenv('TRADINGAGENTS_LOG_LEVEL', 'INFO'),
-        'TRADINGAGENTS_LOG_DIR': os.getenv('TRADINGAGENTS_LOG_DIR', './logs'),
+        'TRADINGAGENTS_LOG_DIR': os.getenv('TRADINGAGENTS_LOG_DIR', ''),
     }
     
     for key, value in env_info.items():

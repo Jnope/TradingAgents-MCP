@@ -10,14 +10,58 @@ TradingAgents-CN MCP Server 入口
 import os
 import sys
 import logging
+from pathlib import Path
 
 
 def _setup_logging():
+    from tradingagents.utils.logging_manager import setup_logging
+
     level = os.getenv("MCP_LOG_LEVEL", "WARNING").upper()
-    logging.basicConfig(
-        level=getattr(logging, level, logging.WARNING),
-        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    log_dir = os.getenv(
+        "MCP_LOG_DIR",
+        str(Path.home() / ".local" / "share" / "opencode" / "log" / "tradingagents-mcp"),
     )
+
+    config = {
+        "level": level,
+        "format": {
+            "console": "%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+            "file": "%(asctime)s | %(name)-20s | %(levelname)-8s | %(module)s:%(funcName)s:%(lineno)d | %(message)s",
+        },
+        "handlers": {
+            "console": {
+                "enabled": True,
+                "stream": "stderr",
+                "colored": False,
+                "level": level,
+            },
+            "file": {
+                "enabled": True,
+                "level": "DEBUG",
+                "backup_count": 7,
+                "directory": log_dir,
+            },
+            "error": {
+                "enabled": True,
+                "level": "WARNING",
+                "backup_count": 7,
+                "directory": log_dir,
+                "filename": "error.log",
+            },
+            "structured": {"enabled": False, "level": "INFO", "directory": log_dir},
+        },
+        "loggers": {
+            "tradingagents": {"level": level},
+            "urllib3": {"level": "WARNING"},
+            "requests": {"level": "WARNING"},
+            "httpx": {"level": "WARNING"},
+            "httpcore": {"level": "WARNING"},
+            "matplotlib": {"level": "WARNING"},
+        },
+        "docker": {"enabled": False, "stdout_only": False},
+    }
+
+    setup_logging(config)
 
 
 def _run_check():
