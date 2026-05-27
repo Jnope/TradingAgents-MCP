@@ -16,7 +16,7 @@ from tradingagents.agents.utils.google_tool_handler import GoogleToolCallHandler
 logger = get_logger("analysts.news")
 
 
-def create_news_analyst(llm, toolkit):
+def create_news_analyst(llm, toolkit, progress_callback=None):
     @log_analyst_module("news")
     def news_analyst_node(state):
         start_time = datetime.now()
@@ -28,6 +28,9 @@ def create_news_analyst(llm, toolkit):
 
         current_date = state["trade_date"]
         ticker = state["company_of_interest"]
+
+        if progress_callback:
+            progress_callback("正在获取新闻数据...")
 
         logger.info(f"[新闻分析师] 开始分析 {ticker} 的新闻，交易日期: {current_date}")
         session_id = state.get("session_id", "未知会话")
@@ -244,6 +247,8 @@ def create_news_analyst(llm, toolkit):
 3. 市场情绪评估
 4. 投资建议"""
 
+                    if progress_callback:
+                        progress_callback("新闻数据已获取，正在生成分析报告...")
                     logger.info(f"[新闻分析师] 🔄 使用预获取新闻数据直接生成分析...")
                     logger.info(f"[新闻分析师] 📝 系统提示词长度: {len(analysis_system_prompt)} 字符")
                     logger.info(f"[新闻分析师] 📝 用户提示词长度: {len(enhanced_prompt)} 字符")
@@ -305,6 +310,9 @@ def create_news_analyst(llm, toolkit):
         # 使用统一的Google工具调用处理器
         if GoogleToolCallHandler.is_google_model(llm):
             logger.info(f"📊 [新闻分析师] 检测到Google模型，使用统一工具调用处理器")
+
+            if progress_callback:
+                progress_callback("新闻数据已获取，正在生成分析报告...")
             
             # 创建分析提示词
             analysis_prompt_template = GoogleToolCallHandler.create_analysis_prompt(
@@ -362,6 +370,8 @@ def create_news_analyst(llm, toolkit):
 请基于上述真实新闻数据撰写详细的中文分析报告。
 """
 
+                        if progress_callback:
+                            progress_callback("新闻数据已获取，正在生成分析报告...")
                         logger.info(f"[新闻分析师] 🔄 基于强制获取的新闻数据重新生成完整分析...")
                         logger.info(f"[新闻分析师] 📝 强制提示词长度: {len(forced_prompt)} 字符")
 

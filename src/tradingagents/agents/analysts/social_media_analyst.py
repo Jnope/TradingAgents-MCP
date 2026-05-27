@@ -89,7 +89,7 @@ def _get_company_name_for_social_media(ticker: str, market_info: dict) -> str:
         return f"股票{ticker}"
 
 
-def create_social_media_analyst(llm, toolkit):
+def create_social_media_analyst(llm, toolkit, progress_callback=None):
     @log_analyst_module("social_media")
     def social_media_analyst_node(state):
         # 🔧 工具调用计数器 - 防止无限循环
@@ -99,6 +99,9 @@ def create_social_media_analyst(llm, toolkit):
 
         current_date = state["trade_date"]
         ticker = state["company_of_interest"]
+
+        if progress_callback:
+            progress_callback("正在获取社交情绪数据...")
 
         # 获取股票市场信息
         from tradingagents.utils.stock_utils import StockUtils
@@ -195,6 +198,9 @@ def create_social_media_analyst(llm, toolkit):
         # 使用统一的Google工具调用处理器
         if GoogleToolCallHandler.is_google_model(llm):
             logger.info(f"📊 [社交媒体分析师] 检测到Google模型，使用统一工具调用处理器")
+
+            if progress_callback:
+                progress_callback("社交情绪数据已获取，正在生成分析报告...")
             
             # 创建分析提示词
             analysis_prompt_template = GoogleToolCallHandler.create_analysis_prompt(

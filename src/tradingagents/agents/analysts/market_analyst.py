@@ -117,7 +117,7 @@ _ANALYSIS_PROMPT = (
 )
 
 
-def create_market_analyst(llm, toolkit):
+def create_market_analyst(llm, toolkit, progress_callback=None):
 
     def market_analyst_node(state):
         logger.debug("市场分析师节点开始")
@@ -136,6 +136,9 @@ def create_market_analyst(llm, toolkit):
 
         current_date = state["trade_date"]
         ticker = state["company_of_interest"]
+
+        if progress_callback:
+            progress_callback("正在获取行情数据...")
 
         from tradingagents.utils.stock_utils import StockUtils
         market_info = StockUtils.get_market_info(ticker)
@@ -162,6 +165,8 @@ def create_market_analyst(llm, toolkit):
         result = chain.invoke({"messages": state["messages"]})
 
         if GoogleToolCallHandler.is_google_model(llm):
+            if progress_callback:
+                progress_callback("行情数据已获取，正在生成技术分析报告...")
             analysis_prompt_template = GoogleToolCallHandler.create_analysis_prompt(
                 ticker=ticker, company_name=company_name,
                 analyst_type="市场分析",
@@ -193,6 +198,8 @@ def create_market_analyst(llm, toolkit):
 
         try:
             tool_messages = _execute_tool_calls(tool_calls, tools)
+            if progress_callback:
+                progress_callback("行情数据已获取，正在生成技术分析报告...")
             analysis_text = _ANALYSIS_PROMPT.format(
                 company_name=company_name, ticker=ticker,
                 market_name=market_info['market_name'],

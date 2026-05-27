@@ -95,7 +95,7 @@ def _get_company_name_for_fundamentals(ticker: str, market_info: dict) -> str:
         return f"股票{ticker}"
 
 
-def create_fundamentals_analyst(llm, toolkit):
+def create_fundamentals_analyst(llm, toolkit, progress_callback=None):
     @log_analyst_module("fundamentals")
     def fundamentals_analyst_node(state):
         logger.debug(f"📊 [DEBUG] ===== 基本面分析师节点开始 =====")
@@ -117,6 +117,9 @@ def create_fundamentals_analyst(llm, toolkit):
 
         current_date = state["trade_date"]
         ticker = state["company_of_interest"]
+
+        if progress_callback:
+            progress_callback("正在获取基本面数据...")
 
         # 🔧 基本面分析数据范围：固定获取10天数据（处理周末/节假日/数据延迟）
         # 参考文档：docs/ANALYST_DATA_CONFIGURATION.md
@@ -401,6 +404,9 @@ def create_fundamentals_analyst(llm, toolkit):
         if GoogleToolCallHandler.is_google_model(fresh_llm):
             logger.info(f"📊 [基本面分析师] 检测到Google模型，使用统一工具调用处理器")
             
+            if progress_callback:
+                progress_callback("基本面数据已获取，正在生成分析报告...")
+
             # 创建分析提示词
             analysis_prompt_template = GoogleToolCallHandler.create_analysis_prompt(
                 ticker=ticker,
@@ -465,6 +471,8 @@ def create_fundamentals_analyst(llm, toolkit):
                     # 不绑定工具，强制LLM生成文本
                     force_chain = force_prompt | fresh_llm
 
+                    if progress_callback:
+                        progress_callback("正在生成基本面分析报告...")
                     logger.info(f"🔧 [强制生成报告] 使用专门的提示词重新调用LLM...")
                     force_result = force_chain.invoke({"messages": messages})
 
@@ -645,6 +653,8 @@ def create_fundamentals_analyst(llm, toolkit):
 - 分析要详细且专业"""
 
                 try:
+                    if progress_callback:
+                        progress_callback("基本面数据已获取，正在生成分析报告...")
                     # 创建简单的分析链
                     analysis_prompt_template = ChatPromptTemplate.from_messages([
                         ("system", "你是专业的股票基本面分析师，基于提供的真实数据进行分析。"),

@@ -42,6 +42,14 @@ mcp = FastMCP(
 )
 
 
+_ANALYST_LABELS = {
+    "market": "市场",
+    "fundamentals": "基本面",
+    "news": "新闻",
+    "social": "社交情绪",
+}
+
+
 async def _run_single_analyst(
     analyst_type: str,
     symbol: str,
@@ -50,6 +58,10 @@ async def _run_single_analyst(
     extra_state: dict = None,
 ) -> dict:
     ctx_ = get_shared_ctx()
+    label = _ANALYST_LABELS.get(analyst_type, analyst_type)
+
+    if ctx:
+        await ctx.info(f"[1/3] 正在初始化{label}分析师...")
 
     from langchain_core.messages import HumanMessage
 
@@ -85,10 +97,25 @@ async def _run_single_analyst(
         "social": create_social_media_analyst,
     }[analyst_type]
 
-    node = create_fn(ctx_.quick_thinking_llm, ctx_.toolkit)
+    progress_callback = None
+    if ctx:
+        event_loop = asyncio.get_running_loop()
+        def _cb(msg: str):
+            asyncio.run_coroutine_threadsafe(ctx.info(msg), event_loop)
+        progress_callback = _cb
 
+    node = create_fn(ctx_.quick_thinking_llm, ctx_.toolkit, progress_callback=progress_callback)
+
+    if ctx:
+        await ctx.info(f"[2/3] 正在获取 {symbol} 数据并执行{label}分析...")
+
+    t1 = time.time()
     loop = asyncio.get_running_loop()
     result_state = await loop.run_in_executor(None, lambda: node(state))
+    elapsed = round(time.time() - t1, 1)
+
+    if ctx:
+        await ctx.info(f"[3/3] {label}分析完成，耗时 {elapsed}s")
 
     report = result_state.get(report_key, "")
 
@@ -153,9 +180,16 @@ Args:
 
         ta = shared.get_graph(analysts, config=config)
 
+        progress_callback = None
+        if ctx:
+            event_loop = asyncio.get_event_loop()
+            def _on_progress(msg: str):
+                asyncio.run_coroutine_threadsafe(ctx.info(msg), event_loop)
+            progress_callback = _on_progress
+
         loop = asyncio.get_event_loop()
         state, decision = await loop.run_in_executor(
-            None, lambda: ta.propagate(symbol, trade_date)
+            None, lambda: ta.propagate(symbol, trade_date, progress_callback=progress_callback)
         )
 
         elapsed = round(time.time() - t0, 1)
@@ -208,8 +242,6 @@ Args:
         return {"success": False, "error": str(e)}
 
     t0 = time.time()
-    if ctx:
-        await ctx.info(f"市场分析师: {symbol}({market}) @ {trade_date}")
     try:
         result = await _run_single_analyst("market", symbol, trade_date, ctx)
         result["market"] = market
@@ -239,8 +271,6 @@ Args:
         return {"success": False, "error": str(e)}
 
     t0 = time.time()
-    if ctx:
-        await ctx.info(f"基本面分析师: {symbol}({market}) @ {trade_date}")
     try:
         result = await _run_single_analyst("fundamentals", symbol, trade_date, ctx)
         result["market"] = market
@@ -272,8 +302,6 @@ Args:
         return {"success": False, "error": str(e)}
 
     t0 = time.time()
-    if ctx:
-        await ctx.info(f"新闻分析师: {symbol}({market}) @ {trade_date}")
     try:
         result = await _run_single_analyst(
             "news", symbol, trade_date, ctx,
@@ -308,8 +336,6 @@ Args:
         return {"success": False, "error": str(e)}
 
     t0 = time.time()
-    if ctx:
-        await ctx.info(f"社交分析师: {symbol}({market}) @ {trade_date}")
     try:
         result = await _run_single_analyst("social", symbol, trade_date, ctx)
         result["market"] = market
@@ -362,7 +388,7 @@ Args:
         return {"success": False, "error": str(e)}
 
     if ctx:
-        await ctx.info(f"多股对比分析: {symbols} @ {trade_date}, 维度={analyst}")
+        await ctx.info(f"[1/3] 多股对比分析: {symbols} @ {trade_date}, 维度={analyst}")
 
     try:
         shared = get_shared_ctx()
@@ -384,6 +410,8 @@ Args:
                 state, decision = await loop.run_in_executor(
                     None, lambda: ta.propagate(sym, trade_date)
                 )
+                if ctx:
+                    await ctx.info(f"  {sym} 全流程分析完成")
                 return {"decision": decision, **extract_reports(state)}
 
             tasks = [_run_full(sym) for sym in symbols]
@@ -392,12 +420,18 @@ Args:
                 individual_results[sym] = res if not isinstance(res, Exception) else {"error": str(res)}
         else:
             async def _run_one(sym):
-                return await _run_single_analyst(analyst, sym, trade_date, ctx)
+                res = await _run_single_analyst(analyst, sym, trade_date, ctx)
+                if ctx:
+                    await ctx.info(f"  {sym} 分析完成")
+                return res
 
             tasks = [_run_one(sym) for sym in symbols]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for sym, res in zip(symbols, results):
                 individual_results[sym] = res if not isinstance(res, Exception) else {"error": str(res)}
+
+        if ctx:
+            await ctx.info(f"[2/3] 各股分析完成，正在生成对比报告...")
 
         comparison_prompt = (
             f"你是一位专业的投资顾问。请对比以下 {len(symbols)} 只股票的分析报告，"
@@ -421,6 +455,9 @@ Args:
         comparison_report = await loop.run_in_executor(
             None, lambda: shared.quick_thinking_llm.invoke(comparison_prompt).content
         )
+
+        if ctx:
+            await ctx.info(f"[3/3] 对比报告生成完成")
 
         return {
             "success": True,
@@ -477,15 +514,24 @@ Args:
         return {"success": False, "error": str(e)}
 
     if ctx:
-        await ctx.info(f"批量分析: {len(symbols)} 只股票, 维度={analyst}")
+        await ctx.info(f"[1/2] 批量分析: {len(symbols)} 只股票, 维度={analyst}")
 
     try:
-        tasks = [_run_single_analyst(analyst, sym, trade_date, ctx) for sym in symbols]
+        async def _run_one(sym):
+            res = await _run_single_analyst(analyst, sym, trade_date, ctx)
+            if ctx:
+                await ctx.info(f"  {sym} 分析完成")
+            return res
+
+        tasks = [_run_one(sym) for sym in symbols]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         individual_results = {}
         for sym, res in zip(symbols, results):
             individual_results[sym] = res if not isinstance(res, Exception) else {"error": str(res)}
+
+        if ctx:
+            await ctx.info(f"[2/2] 批量分析全部完成")
 
         return {
             "success": True,
@@ -540,12 +586,14 @@ Args:
         return {"success": False, "error": str(e)}
 
     if ctx:
-        await ctx.info(f"历史区间对比: {symbol}({market}) {start_date}~{end_date}" + (f" vs {compare_with}" if compare_with else ""))
+        await ctx.info(f"[1/3] 历史区间对比: {symbol}({market}) {start_date}~{end_date}" + (f" vs {compare_with}" if compare_with else ""))
 
     try:
         shared = get_shared_ctx()
         loop = asyncio.get_event_loop()
 
+        if ctx:
+            await ctx.info(f"[2/3] 正在获取行情数据...")
         symbol_data = await loop.run_in_executor(
             None, lambda: shared.toolkit.get_stock_market_data_unified(symbol, start_date, end_date)
         )
@@ -647,7 +695,7 @@ Args:
     t0 = time.time()
 
     if ctx:
-        await ctx.info(f"股票筛选: {len(conditions)} 个条件, 市场={market}")
+        await ctx.info(f"[1/2] 股票筛选: {len(conditions)} 个条件, 市场={market}")
 
     try:
         loop = asyncio.get_event_loop()
@@ -657,6 +705,8 @@ Args:
         )
 
         if items:
+            if ctx:
+                await ctx.info(f"[2/2] 筛选到 {len(items)} 只股票，正在生成解读报告...")
             items_summary = format_screening_items(items, max_items=30)
             analysis_prompt = (
                 f"你是一位专业的投资顾问。以下是通过筛选条件的 {market} 市场股票（共 {len(items)} 只）：\n\n"
