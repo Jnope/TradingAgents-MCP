@@ -695,7 +695,6 @@ def get_realtime_stock_news(ticker: str, curr_date: str, hours_back: int = 6) ->
     logger.info(f"[新闻分析] ========== 步骤1: 股票类型判断 ==========")
     stock_type = "未知"
     is_china_stock = False
-    logger.info(f"[新闻分析] 原始ticker: {ticker}")
 
     if '.' in ticker:
         logger.info(f"[新闻分析] 检测到ticker包含点号，进行后缀匹配")

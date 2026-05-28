@@ -6,6 +6,7 @@ src/tradingagents/agents/__init__.py
 src/tradingagents/agents/analysts/fundamentals_analyst.py
 src/tradingagents/agents/analysts/market_analyst.py
 src/tradingagents/agents/analysts/news_analyst.py
+src/tradingagents/agents/analysts/news_social_analyst.py
 src/tradingagents/agents/analysts/social_media_analyst.py
 src/tradingagents/agents/managers/research_manager.py
 src/tradingagents/agents/managers/risk_manager.py

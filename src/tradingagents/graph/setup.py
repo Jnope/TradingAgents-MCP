@@ -21,6 +21,7 @@ _ANALYST_REPORT_KEY = {
     "fundamentals": "fundamentals_report",
     "news": "news_report",
     "social": "sentiment_report",
+    "news_social": "news_report",  # 合并节点: news_social 同时写入 news_report + sentiment_report
 }
 
 _ANALYST_TOOL_COUNT_KEY = {
@@ -28,6 +29,7 @@ _ANALYST_TOOL_COUNT_KEY = {
     "fundamentals": "fundamentals_tool_call_count",
     "news": "news_tool_call_count",
     "social": "sentiment_tool_call_count",
+    "news_social": "news_tool_call_count",  # 合并节点
 }
 
 
@@ -73,14 +75,23 @@ class GraphSetup:
             analyst_nodes["market"] = create_market_analyst(
                 self.quick_thinking_llm, self.toolkit
             )
-        if "social" in selected_analysts:
-            analyst_nodes["social"] = create_social_media_analyst(
+
+        # news + social 合并为一次调用
+        if "news" in selected_analysts and "social" in selected_analysts:
+            from tradingagents.agents.analysts.news_social_analyst import create_news_social_analyst
+            analyst_nodes["news_social"] = create_news_social_analyst(
                 self.quick_thinking_llm, self.toolkit
             )
-        if "news" in selected_analysts:
-            analyst_nodes["news"] = create_news_analyst(
-                self.quick_thinking_llm, self.toolkit
-            )
+        else:
+            if "social" in selected_analysts:
+                analyst_nodes["social"] = create_social_media_analyst(
+                    self.quick_thinking_llm, self.toolkit
+                )
+            if "news" in selected_analysts:
+                analyst_nodes["news"] = create_news_analyst(
+                    self.quick_thinking_llm, self.toolkit
+                )
+
         if "fundamentals" in selected_analysts:
             analyst_nodes["fundamentals"] = create_fundamentals_analyst(
                 self.quick_thinking_llm, self.toolkit
@@ -93,9 +104,10 @@ class GraphSetup:
 
         analyst_tools_map = {
             "market": [self.toolkit.get_stock_market_data_unified],
+            "fundamentals": [self.toolkit.get_stock_fundamentals_unified],
             "social": [self.toolkit.get_stock_sentiment_unified],
             "news": [self.toolkit.get_stock_news_unified],
-            "fundamentals": [self.toolkit.get_stock_fundamentals_unified],
+            "news_social": [self.toolkit.get_stock_news_unified],
         }
 
         def _execute_tool_calls(tool_calls, tools):
@@ -219,10 +231,21 @@ class GraphSetup:
             def _run_one(item):
                 analyst_type, node_fn = item
                 try:
-                    report = _run_analyst_with_tool_loop(
-                        analyst_type, node_fn, ticker, trade_date
-                    )
-                    return analyst_type, report, None
+                    if analyst_type == "news_social":
+                        isolated_state = {
+                            "messages": [HumanMessage(content=f"请分析股票 {ticker}")],
+                            "company_of_interest": ticker,
+                            "trade_date": trade_date,
+                        }
+                        result = node_fn(isolated_state)
+                        news_r = result.get("news_report", "")
+                        sentiment_r = result.get("sentiment_report", "")
+                        return analyst_type, {"news_report": news_r, "sentiment_report": sentiment_r}, None
+                    else:
+                        report = _run_analyst_with_tool_loop(
+                            analyst_type, node_fn, ticker, trade_date
+                        )
+                        return analyst_type, report, None
                 except Exception as e:
                     logger.error(
                         f"❌ [并行分析师] {analyst_type} 执行失败: {e}",
@@ -243,10 +266,18 @@ class GraphSetup:
 
             update = {"messages": [HumanMessage(content="Continue")]}
 
-            for analyst_type in selected_analysts:
+            for analyst_type, report_val in reports.items():
+                if analyst_type == "news_social":
+                    if isinstance(report_val, dict):
+                        update["news_report"] = report_val.get("news_report", "")
+                        update["sentiment_report"] = report_val.get("sentiment_report", "")
+                    update["news_tool_call_count"] = 1
+                    update["sentiment_tool_call_count"] = 1
+                    continue
+
                 report_key = _ANALYST_REPORT_KEY.get(analyst_type)
                 if report_key:
-                    update[report_key] = reports.get(analyst_type, "")
+                    update[report_key] = report_val if isinstance(report_val, str) else ""
                 count_key = _ANALYST_TOOL_COUNT_KEY.get(analyst_type)
                 if count_key:
                     update[count_key] = 1

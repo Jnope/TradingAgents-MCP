@@ -386,7 +386,7 @@ class TradingAgentsGraph:
             "social": ToolNode(
                 [
                     # 统一工具（推荐）
-                    self.toolkit.get_stock_sentiment_unified,
+                    self.toolkit.get_stock_news_unified,
                     # 在线工具（备用）
                     self.toolkit.get_stock_news_openai,
                     # 离线工具（备用）

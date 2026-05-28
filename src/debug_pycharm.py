@@ -32,12 +32,26 @@ from tradingagents.agents.utils.agent_utils import Toolkit
 config = build_config()
 set_config(config)
 toolkit = Toolkit(config=config)
+symbol = "688031"
+trade_date = "2025-05-20"
 
+social_news  = toolkit.get_stock_news_unified.invoke({
+    "ticker": symbol,
+    "curr_date": trade_date,
+})
+print(social_news)
 # ============================================================
 # 第2步: 测试数据获取（不依赖LLM，断点在此区域）
 # ============================================================
-symbol = "688031"
-trade_date = "2025-05-20"
+"""
+
+market_data = toolkit.get_stock_news_unified.invoke({
+    "ticker": symbol,
+    "curr_date": trade_date,
+})
+print(f"新闻条数: {len(market_data) if market_data else 0}")
+print(market_data[0])
+"""
 
 """
 # 2a. 行情数据
@@ -67,7 +81,7 @@ from tradingagents_mcp.shared_context import get_shared_ctx
 from tradingagents.agents import create_market_analyst
 from langchain_core.messages import HumanMessage
 
-ctx = get_shared_ctx()
+# ctx = get_shared_ctx()
 """
 node = create_market_analyst(ctx.quick_thinking_llm, ctx.toolkit)
 
@@ -90,8 +104,10 @@ print(report[:500])
 # 第4步: 测试完整全流程（耗时3-10分钟）
 # ============================================================
 # 取消下方注释即可运行
+"""
 # "social", "news",
 ta = ctx.get_graph(["market", "fundamentals"])
 final_state, decision = ta.propagate(symbol, trade_date)
 # 👆 在此行设断点，检查 decision 和 final_state
 print(f"state: {final_state}\n决策: {decision}")
+"""

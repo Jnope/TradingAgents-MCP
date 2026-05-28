@@ -232,7 +232,7 @@ async def market_analyst(
 支持A股(如000001)、美股(如AAPL)、港股(如00700.HK)。
 
 Args:
-    symbol: 股票代码，如000001
+    symbol: 股票代码，A股(如000001)、美股(如AAPL)、港股(如00700.HK)
     trade_date: 交易日期 YYYY-MM-DD
 """
     try:
@@ -261,7 +261,7 @@ async def fundamentals_analyst(
 分析内容：估值指标、盈利能力、财务健康、行业对比。
 
 Args:
-    symbol: 股票代码
+    symbol: 股票代码，A股(如000001)、美股(如AAPL)、港股(如00700.HK)
     trade_date: 交易日期 YYYY-MM-DD
 """
     try:
@@ -291,7 +291,7 @@ async def news_analyst(
 分析内容：重大新闻事件、政策影响、行业动态、潜在风险。
 
 Args:
-    symbol: 股票代码
+    symbol: 股票代码，A股(如000001)、美股(如AAPL)、港股(如00700.HK)
     trade_date: 交易日期 YYYY-MM-DD
     look_back_days: 回看天数，默认7
 """
@@ -326,7 +326,7 @@ async def social_analyst(
 A股社交数据源有限，可能返回数据不足。
 
 Args:
-    symbol: 股票代码
+    symbol: 股票代码，A股(如000001)、美股(如AAPL)、港股(如00700.HK)
     trade_date: 交易日期 YYYY-MM-DD
 """
     try:
@@ -566,7 +566,7 @@ async def period_compare(
 常见指数代码: 000300(沪深300) 000016(上证50) 399006(创业板指)
 
 Args:
-    symbol: 股票代码
+    symbol: 股票代码，A股(如000001)、美股(如AAPL)、港股(如00700.HK)
     start_date: 起始日期 YYYY-MM-DD
     end_date: 结束日期 YYYY-MM-DD
     metrics: 对比指标，默认 ["close","volume","pct_chg"]

@@ -1,7 +1,7 @@
 """
 Trade Calendar - 交易日历查询与缓存
 
-优先级：本地缓存文件 → 内部数据库查询 → LLM智能判断
+优先级：本地缓存文件 → 内部数据库查询 → AKShare在线查询 → LLM智能判断
 """
 
 import json
@@ -56,12 +56,12 @@ def _query_trade_calendar_db() -> Optional[dict]:
         end = (today + timedelta(days=365)).strftime("%Y-%m-%d")
 
         sql = (
-            f"SELECT trade_date, is_open FROM trade_calendar "
-            f"WHERE trade_date >= '{start} 00:00:00' "
-            f"AND trade_date < '{end} 00:00:00' "
-            f"AND exchange = 'SSE'"
+            f"SELECT `trade_date`, `is_open` FROM `trade_calendar` "
+            f"WHERE `trade_date` >= '{start} 00:00:00' "
+            f"AND `trade_date` < '{end} 00:00:00' "
+            f"AND `exchange` = 'SSE'"
         )
-        df = query(sql)
+        df = query(sql, table='trade_calendar')
 
         if df is None or df.empty:
             return None
@@ -175,12 +175,7 @@ def get_trade_dates() -> Set[str]:
         _module_cache = set(db_data["trade_dates"])
         return _module_cache
 
-    if file_cache and file_cache.get("trade_dates"):
-        logger.warning("数据库查询失败，使用过期的本地缓存")
-        _module_cache = set(file_cache["trade_dates"])
-        return _module_cache
-
-    logger.warning("所有交易日历数据源均不可用，将使用LLM逐次判断")
+    logger.warning("交易日历数据源不可用，将使用LLM逐次判断")
     return set()
 
 
