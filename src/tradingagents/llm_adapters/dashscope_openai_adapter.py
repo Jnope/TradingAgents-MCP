@@ -5,11 +5,8 @@
 """
 
 import os
-from typing import Any, Dict, List, Optional, Union, Sequence
+from typing import Any, Dict, Optional
 from langchain_openai import ChatOpenAI
-from langchain_core.tools import BaseTool
-from pydantic import Field, SecretStr
-from ..config.config_manager import token_tracker
 
 # 导入日志模块
 from tradingagents.utils.logging_manager import get_logger
@@ -103,37 +100,7 @@ class ChatDashScopeOpenAI(ChatOpenAI):
         """重写生成方法，添加 token 使用量追踪"""
         
         # 调用父类的生成方法
-        result = super()._generate(*args, **kwargs)
-        
-        # 追踪 token 使用量
-        try:
-            # 从结果中提取 token 使用信息
-            if hasattr(result, 'llm_output') and result.llm_output:
-                token_usage = result.llm_output.get('token_usage', {})
-                
-                input_tokens = token_usage.get('prompt_tokens', 0)
-                output_tokens = token_usage.get('completion_tokens', 0)
-                
-                if input_tokens > 0 or output_tokens > 0:
-                    # 生成会话ID
-                    session_id = kwargs.get('session_id', f"dashscope_openai_{hash(str(args))%10000}")
-                    analysis_type = kwargs.get('analysis_type', 'stock_analysis')
-                    
-                    # 使用 TokenTracker 记录使用量
-                    token_tracker.track_usage(
-                        provider="dashscope",
-                        model_name=self.model_name,
-                        input_tokens=input_tokens,
-                        output_tokens=output_tokens,
-                        session_id=session_id,
-                        analysis_type=analysis_type
-                    )
-                    
-        except Exception as track_error:
-            # token 追踪失败不应该影响主要功能
-            logger.error(f"⚠️ Token 追踪失败: {track_error}")
-        
-        return result
+        return super()._generate(*args, **kwargs)
 
 
 # 支持的模型列表

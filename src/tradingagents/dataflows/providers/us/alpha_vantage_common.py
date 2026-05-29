@@ -10,7 +10,6 @@ Alpha Vantage API 公共模块
 参考原版 TradingAgents 实现
 """
 
-import os
 import time
 import json
 import requests
@@ -47,19 +46,19 @@ def get_api_key() -> str:
         ValueError: 如果未配置 API Key
     """
     # 1. 从环境变量获取
+    import os
     api_key = os.getenv("ALPHA_VANTAGE_API_KEY")
     if api_key:
         return api_key
 
-    # 2. 从配置文件获取
+    # 2. 从配置文件获取 (legacy ConfigManager 已废弃，仅保留环境变量)
     try:
-        from tradingagents.config.config_manager import ConfigManager
-        config_manager = ConfigManager()
-        api_key = config_manager.get("ALPHA_VANTAGE_API_KEY")
+        import os
+        api_key = os.getenv("ALPHA_VANTAGE_API_KEY")
         if api_key:
             return api_key
-    except Exception as e:
-        logger.debug(f"⚠️ 无法从配置文件获取 Alpha Vantage API Key: {e}")
+    except Exception:
+        pass
 
     raise ValueError(
         "❌ Alpha Vantage API Key 未配置！\n"

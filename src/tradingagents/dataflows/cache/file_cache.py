@@ -29,9 +29,7 @@ class StockDataCache:
             cache_dir: 缓存目录路径，默认为 tradingagents/dataflows/data_cache
         """
         if cache_dir is None:
-            # 获取当前文件所在目录
-            current_dir = Path(__file__).parent
-            cache_dir = current_dir / "data_cache"
+            cache_dir = Path(os.path.expanduser("~")) / ".tradingagents" / "data_cache"
 
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(exist_ok=True)

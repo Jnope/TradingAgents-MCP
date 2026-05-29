@@ -86,18 +86,29 @@ except ImportError as e:
     logger.warning(f"⚠️ yfinance库不可用: {e}")
     yf = None
     YF_AVAILABLE = False
-from tradingagents.config.config_manager import config_manager
 
-# 获取数据目录
-DATA_DIR = config_manager.get_data_dir()
+_config = None
+
+DATA_DIR = os.path.join(os.path.expanduser("~"), ".tradingagents", "data")
+
+
+def _default_config():
+    from tradingagents.default_config import DEFAULT_CONFIG
+    return DEFAULT_CONFIG.copy()
+
 
 def get_config():
-    """获取配置（兼容性包装）"""
-    return config_manager.load_settings()
+    """获取配置（未通过 set_config 设置时，返回 DEFAULT_CONFIG 默认值）"""
+    if _config is None:
+        return _default_config()
+    return _config
+
 
 def set_config(config):
-    """设置配置（兼容性包装）"""
-    config_manager.save_settings(config)
+    """设置配置（MCP 模式下由 SharedContext 调用，传入 build_config() 结果）"""
+    global _config, DATA_DIR
+    _config = dict(config)
+    DATA_DIR = _config.get("data_dir", DATA_DIR)
 
 
 def get_finnhub_news(

@@ -23,12 +23,10 @@ src/tradingagents/agents/utils/google_tool_handler.py
 src/tradingagents/agents/utils/memory.py
 src/tradingagents/api/stock_api.py
 src/tradingagents/config/__init__.py
-src/tradingagents/config/config_manager.py
 src/tradingagents/config/env_utils.py
 src/tradingagents/config/providers_config.py
 src/tradingagents/config/runtime_settings.py
 src/tradingagents/config/tushare_config.py
-src/tradingagents/config/usage_models.py
 src/tradingagents/constants/__init__.py
 src/tradingagents/constants/data_sources.py
 src/tradingagents/dataflows/__init__.py

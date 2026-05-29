@@ -19,15 +19,6 @@ from tradingagents.utils.logging_manager import get_logger, get_logger_manager
 logger = get_logger('agents')
 logger = setup_llm_logging()
 
-# 导入token跟踪器
-try:
-    from tradingagents.config.config_manager import token_tracker
-    TOKEN_TRACKING_ENABLED = True
-    logger.info("✅ Token跟踪功能已启用")
-except ImportError:
-    TOKEN_TRACKING_ENABLED = False
-    logger.warning("⚠️ Token跟踪功能未启用")
-
 
 class OpenAICompatibleBase(ChatOpenAI):
     """
@@ -168,30 +159,8 @@ class OpenAICompatibleBase(ChatOpenAI):
         
         # 调用父类生成方法
         result = super()._generate(messages, stop, run_manager, **kwargs)
-        
-        # 记录token使用
-        self._track_token_usage(result, kwargs, start_time)
-        
+
         return result
-
-    def _track_token_usage(self, result: ChatResult, kwargs: Dict, start_time: float):
-        """记录token使用量并输出日志"""
-        if not TOKEN_TRACKING_ENABLED:
-            return
-        try:
-            # 统计token信息
-            usage = getattr(result, "usage_metadata", None)
-            total_tokens = usage.get("total_tokens") if usage else None
-            prompt_tokens = usage.get("input_tokens") if usage else None
-            completion_tokens = usage.get("output_tokens") if usage else None
-
-            elapsed = time.time() - start_time
-            logger.info(
-                f"📊 Token使用 - Provider: {getattr(self, 'provider_name', 'unknown')}, Model: {getattr(self, 'model_name', 'unknown')}, "
-                f"总tokens: {total_tokens}, 提示: {prompt_tokens}, 补全: {completion_tokens}, 用时: {elapsed:.2f}s"
-            )
-        except Exception as e:
-            logger.warning(f"⚠️ Token跟踪记录失败: {e}")
 
 
 class ChatDeepSeekOpenAI(OpenAICompatibleBase):

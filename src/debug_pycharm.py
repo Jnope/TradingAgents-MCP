@@ -17,7 +17,7 @@ os.environ.setdefault("MCP_BACKEND_URL", "https://llmops.transwarp.io/vibecoding
 os.environ.setdefault("MCP_DEEP_THINK_LLM", "xclaw/glm-5.1")
 os.environ.setdefault("MCP_QUICK_THINK_LLM", "xclaw/glm-5.1")
 os.environ.setdefault("MCP_DEEP_API_KEY", "llmops-zhenjiang-368c5e8878cf7b0f55b02401fab49aec")  # TODO: 填入 API Key
-os.environ.setdefault("MCP_LOG_LEVEL", "INFO")
+os.environ.setdefault("TRADINGAGENTS_LOG_LEVEL", "INFO")
 
 import logging
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")

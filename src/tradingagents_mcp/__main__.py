@@ -16,9 +16,9 @@ from pathlib import Path
 def _setup_logging():
     from tradingagents.utils.logging_manager import setup_logging
 
-    level = os.getenv("MCP_LOG_LEVEL", "WARNING").upper()
+    level = os.getenv("TRADINGAGENTS_LOG_LEVEL", "WARNING").upper()
     log_dir = os.getenv(
-        "MCP_LOG_DIR",
+        "TRADINGAGENTS_LOG_DIR",
         str(Path.home() / ".local" / "share" / "opencode" / "log" / "tradingagents-mcp"),
     )
 

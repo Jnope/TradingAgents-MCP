@@ -5,13 +5,10 @@ Google AI OpenAI兼容适配器
 """
 
 import os
-from typing import Any, Dict, List, Optional, Union, Sequence
+from typing import Any, Dict, List, Optional
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.tools import BaseTool
-from langchain_core.messages import BaseMessage, AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, AIMessage
 from langchain_core.outputs import LLMResult
-from pydantic import Field, SecretStr
-from ..config.config_manager import token_tracker
 
 # 导入日志模块
 from tradingagents.utils.logging_manager import get_logger
@@ -177,9 +174,6 @@ class ChatGoogleOpenAI(ChatGoogleGenerativeAI):
                         if hasattr(generation_list, 'message') and generation_list.message:
                             self._optimize_message_content(generation_list.message)
 
-            # 追踪 token 使用量
-            self._track_token_usage(result, kwargs)
-
             return result
 
         except Exception as e:
@@ -257,38 +251,6 @@ class ChatGoogleOpenAI(ChatGoogleGenerativeAI):
             enhanced_content = f"{enhanced_content}\n\n文章来源: Google AI 智能分析"
         
         return enhanced_content
-    
-    def _track_token_usage(self, result: LLMResult, kwargs: Dict[str, Any]):
-        """追踪 token 使用量"""
-        
-        try:
-            # 从结果中提取 token 使用信息
-            if hasattr(result, 'llm_output') and result.llm_output:
-                token_usage = result.llm_output.get('token_usage', {})
-                
-                input_tokens = token_usage.get('prompt_tokens', 0)
-                output_tokens = token_usage.get('completion_tokens', 0)
-                
-                if input_tokens > 0 or output_tokens > 0:
-                    # 生成会话ID
-                    session_id = kwargs.get('session_id', f"google_openai_{hash(str(kwargs))%10000}")
-                    analysis_type = kwargs.get('analysis_type', 'stock_analysis')
-                    
-                    # 使用 TokenTracker 记录使用量
-                    token_tracker.track_usage(
-                        provider="google",
-                        model_name=self.model,
-                        input_tokens=input_tokens,
-                        output_tokens=output_tokens,
-                        session_id=session_id,
-                        analysis_type=analysis_type
-                    )
-                    
-                    logger.debug(f"📊 [Google适配器] Token使用量: 输入={input_tokens}, 输出={output_tokens}")
-                    
-        except Exception as track_error:
-            # token 追踪失败不应该影响主要功能
-            logger.error(f"⚠️ Google适配器 Token 追踪失败: {track_error}")
 
 
 # 支持的模型列表

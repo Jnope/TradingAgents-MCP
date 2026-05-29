@@ -290,7 +290,7 @@ class TradingAgentsGraph:
             set_config(self.config)
 
         os.makedirs(
-            os.path.join(self.config["project_dir"], "dataflows/data_cache"),
+            self.config["data_cache_dir"],
             exist_ok=True,
         )
 
@@ -927,11 +927,12 @@ class TradingAgentsGraph:
         }
 
         # Save to file
-        directory = Path(f"eval_results/{self.ticker}/TradingAgentsStrategy_logs/")
+        results_base = self.config.get("results_dir", os.path.join(os.path.expanduser("~"), ".tradingagents", "results"))
+        directory = Path(results_base) / "eval_results" / self.ticker / "TradingAgentsStrategy_logs"
         directory.mkdir(parents=True, exist_ok=True)
 
         with open(
-            f"eval_results/{self.ticker}/TradingAgentsStrategy_logs/full_states_log.json",
+            directory / "full_states_log.json",
             "w",
         ) as f:
             json.dump(self.log_states_dict, f, indent=4)

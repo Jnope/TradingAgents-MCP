@@ -26,7 +26,7 @@ class SharedContext:
         set_config(config)
 
         os.makedirs(
-            os.path.join(config["project_dir"], "dataflows/data_cache"),
+            config["data_cache_dir"],
             exist_ok=True,
         )
 
